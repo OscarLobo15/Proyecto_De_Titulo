@@ -1,0 +1,29 @@
+import { Card } from '../components/ui/Card.jsx';
+
+export function Settings() {
+  return (
+    <div className="page-stack">
+      <div>
+        <span className="eyebrow">Configuracion</span>
+        <h2>Settings</h2>
+      </div>
+      <Card>
+        <dl className="settings-list">
+          <div>
+            <dt>Cloud</dt>
+            <dd>{{ cloud_label }}</dd>
+          </div>
+          <div>
+            <dt>Autenticacion</dt>
+            <dd>{{ project.auth }}</dd>
+          </div>
+          <div>
+            <dt>Contenedores</dt>
+            <dd>{{ containers | join(", ") }}</dd>
+          </div>
+        </dl>
+      </Card>
+    </div>
+  );
+}
+

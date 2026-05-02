@@ -1,0 +1,17 @@
+{
+  "name": "reference-architecture-generator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Plataforma y CLI para generar esqueletos de proyectos base.",
+  "bin": {
+    "create-reference-architecture": "cli/index.js"
+  },
+  "scripts": {
+    "start": "./dev.sh start",
+    "dev": "./dev.sh start",
+    "stop": "./dev.sh stop",
+    "status": "./dev.sh status",
+    "setup": "./dev.sh setup"
+  }
+}
+

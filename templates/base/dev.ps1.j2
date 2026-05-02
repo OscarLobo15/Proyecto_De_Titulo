@@ -1,0 +1,233 @@
+param(
+  [ValidateSet("start", "background", "stop", "restart", "status", "backend", "frontend", "services", "logs", "setup")]
+  [string]$Command = "start"
+)
+
+$ErrorActionPreference = "Stop"
+
+$ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$BackendDir = Join-Path $ProjectRoot "backend"
+$FrontendDir = Join-Path $ProjectRoot "frontend"
+$ServicesDir = Join-Path $ProjectRoot "services"
+$VenvDir = Join-Path $ProjectRoot ".venv"
+
+$BackendHost = $env:BACKEND_HOST
+if (-not $BackendHost) { $BackendHost = "127.0.0.1" }
+$BackendPort = $env:BACKEND_PORT
+if (-not $BackendPort) { $BackendPort = "{{ backend_port }}" }
+$FrontendHost = $env:FRONTEND_HOST
+if (-not $FrontendHost) { $FrontendHost = "0.0.0.0" }
+$FrontendPort = $env:FRONTEND_PORT
+if (-not $FrontendPort) { $FrontendPort = "{{ frontend_port }}" }
+$ServiceTemplatePort = $env:SERVICE_TEMPLATE_PORT
+if (-not $ServiceTemplatePort) { $ServiceTemplatePort = "8002" }
+
+$BackendLog = Join-Path $env:TEMP "{{ project_name }}_backend.log"
+$FrontendLog = Join-Path $env:TEMP "{{ project_name }}_frontend.log"
+$ServiceLog = Join-Path $env:TEMP "{{ project_name }}_service_template.log"
+
+function Write-Info($Message) { Write-Host $Message -ForegroundColor Cyan }
+function Write-Ok($Message) { Write-Host $Message -ForegroundColor Green }
+function Write-Warn($Message) { Write-Host $Message -ForegroundColor Yellow }
+
+function Wait-ForUrl($Url, $Attempts = 30) {
+  for ($i = 0; $i -lt $Attempts; $i++) {
+    try {
+      Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2 | Out-Null
+      return $true
+    } catch {
+      Start-Sleep -Seconds 1
+    }
+  }
+  return $false
+}
+
+function Stop-Port($Port) {
+  $connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+  foreach ($connection in $connections) {
+    Stop-Process -Id $connection.OwningProcess -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Ensure-BackendDeps {
+{% if not has_backend %}
+  return
+{% endif %}
+  if (-not (Test-Path $VenvDir)) {
+    Write-Warn "Python venv not found. Creating .venv..."
+    python -m venv $VenvDir
+  }
+
+  $Python = Join-Path $VenvDir "Scripts/python.exe"
+  $Marker = Join-Path $VenvDir ".backend_deps_installed"
+  $Requirements = Join-Path $BackendDir "requirements.txt"
+  if ((-not (Test-Path $Marker)) -or ((Get-Item $Requirements).LastWriteTime -gt (Get-Item $Marker).LastWriteTime)) {
+    Write-Info "Installing backend dependencies..."
+    & $Python -m pip install -q -r $Requirements
+    New-Item -ItemType File -Path $Marker -Force | Out-Null
+  }
+}
+
+function Ensure-FrontendDeps {
+{% if not has_frontend %}
+  return
+{% endif %}
+  if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    throw "Node.js/npm is required."
+  }
+  $NodeModules = Join-Path $FrontendDir "node_modules"
+  if (-not (Test-Path $NodeModules)) {
+    Write-Info "Installing frontend dependencies..."
+    Push-Location $FrontendDir
+    npm install
+    Pop-Location
+  }
+}
+
+function Ensure-ServiceDeps {
+{% if not has_backend %}
+  return
+{% endif %}
+  if (-not (Test-Path $ServicesDir)) { return }
+  $Python = Join-Path $VenvDir "Scripts/python.exe"
+  Get-ChildItem -Path $ServicesDir -Filter requirements.txt -Recurse | ForEach-Object {
+    $ServiceName = Split-Path -Leaf $_.DirectoryName
+    $Marker = Join-Path $VenvDir ".service_${ServiceName}_deps_installed"
+    if (-not (Test-Path $Marker) -or ($_.LastWriteTime -gt (Get-Item $Marker).LastWriteTime)) {
+      Write-Info "Installing service deps: $ServiceName"
+      & $Python -m pip install -q -r $_.FullName
+      New-Item -ItemType File -Path $Marker -Force | Out-Null
+    }
+  }
+}
+
+function Setup-All {
+  Ensure-BackendDeps
+  Ensure-FrontendDeps
+  Ensure-ServiceDeps
+}
+
+function Start-Backend {
+{% if not has_backend %}
+  Write-Warn "Backend was not included in this project."
+  return
+{% endif %}
+  Ensure-BackendDeps
+  Stop-Port $BackendPort
+  $Python = Join-Path $VenvDir "Scripts/python.exe"
+  Write-Info "Starting backend on http://${BackendHost}:${BackendPort}"
+  $process = Start-Process -FilePath $Python -ArgumentList "-m", "uvicorn", "app.main:app", "--host", $BackendHost, "--port", $BackendPort -WorkingDirectory $BackendDir -RedirectStandardOutput $BackendLog -RedirectStandardError $BackendLog -PassThru
+  if (-not (Wait-ForUrl "http://${BackendHost}:${BackendPort}/health")) {
+    Get-Content $BackendLog -Tail 40
+    throw "Backend did not become healthy."
+  }
+  Write-Ok "Backend ready. Swagger: http://${BackendHost}:${BackendPort}/docs"
+  return $process
+}
+
+function Start-Frontend {
+{% if not has_frontend %}
+  Write-Warn "Frontend was not included in this project."
+  return
+{% endif %}
+  Ensure-FrontendDeps
+  Stop-Port $FrontendPort
+  $Vite = Join-Path $FrontendDir "node_modules/vite/bin/vite.js"
+  Write-Info "Starting frontend on http://localhost:${FrontendPort}"
+  $process = Start-Process -FilePath "node" -ArgumentList $Vite, "--host", $FrontendHost, "--port", $FrontendPort -WorkingDirectory $FrontendDir -RedirectStandardOutput $FrontendLog -RedirectStandardError $FrontendLog -PassThru
+  if (-not (Wait-ForUrl "http://127.0.0.1:${FrontendPort}")) {
+    Get-Content $FrontendLog -Tail 40
+    throw "Frontend did not become healthy."
+  }
+  Write-Ok "Frontend ready. http://localhost:${FrontendPort}"
+  return $process
+}
+
+function Start-Services {
+{% if not has_backend %}
+  Write-Warn "Services require a backend project."
+  return
+{% endif %}
+  if (-not (Test-Path (Join-Path $ServicesDir "template"))) {
+    Write-Warn "No service skeletons configured."
+    return
+  }
+  Ensure-BackendDeps
+  Ensure-ServiceDeps
+  Stop-Port $ServiceTemplatePort
+  $Python = Join-Path $VenvDir "Scripts/python.exe"
+  $ServiceDir = Join-Path $ServicesDir "template"
+  Write-Info "Starting template service on http://127.0.0.1:${ServiceTemplatePort}"
+  $process = Start-Process -FilePath $Python -ArgumentList "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", $ServiceTemplatePort -WorkingDirectory $ServiceDir -RedirectStandardOutput $ServiceLog -RedirectStandardError $ServiceLog -PassThru
+  if (-not (Wait-ForUrl "http://127.0.0.1:${ServiceTemplatePort}/health")) {
+    Get-Content $ServiceLog -Tail 40
+    throw "Template service did not become healthy."
+  }
+  Write-Ok "Template service ready."
+  return $process
+}
+
+function Stop-All {
+  Stop-Port $FrontendPort
+  Stop-Port $BackendPort
+  Stop-Port $ServiceTemplatePort
+  Write-Ok "All services stopped."
+}
+
+function Show-Status {
+{% if has_backend %}
+  if (Wait-ForUrl "http://${BackendHost}:${BackendPort}/health" 1) { Write-Ok "Backend running http://${BackendHost}:${BackendPort}" } else { Write-Warn "Backend not running" }
+{% endif %}
+{% if has_frontend %}
+  if (Wait-ForUrl "http://127.0.0.1:${FrontendPort}" 1) { Write-Ok "Frontend running http://localhost:${FrontendPort}" } else { Write-Warn "Frontend not running" }
+{% endif %}
+}
+
+switch ($Command) {
+  "setup" { Setup-All }
+  "backend" { Start-Backend | Out-Null }
+  "frontend" { Start-Frontend | Out-Null }
+  "services" { Start-Services | Out-Null }
+  "stop" { Stop-All }
+  "status" { Show-Status }
+  "restart" {
+    Stop-All
+    Start-Backend | Out-Null
+{% if include_services %}
+    Start-Services | Out-Null
+{% endif %}
+    Start-Frontend | Out-Null
+  }
+  "background" {
+    Start-Backend | Out-Null
+{% if include_services %}
+    Start-Services | Out-Null
+{% endif %}
+    Start-Frontend | Out-Null
+  }
+  "logs" {
+    Get-Content $BackendLog, $FrontendLog, $ServiceLog -Tail 80 -Wait -ErrorAction SilentlyContinue
+  }
+  default {
+    Setup-All
+{% if has_backend %}
+    $backendProcess = Start-Backend
+{% endif %}
+{% if include_services %}
+    Start-Services | Out-Null
+{% endif %}
+{% if has_frontend %}
+    Start-Frontend | Out-Null
+    Start-Process "http://localhost:${FrontendPort}" | Out-Null
+{% endif %}
+    Write-Host "Press Ctrl+C to stop." -ForegroundColor DarkGray
+    try {
+      while ($true) { Start-Sleep -Seconds 2 }
+    } finally {
+{% if has_backend %}
+      if ($backendProcess) { Stop-Process -Id $backendProcess.Id -Force -ErrorAction SilentlyContinue }
+{% endif %}
+    }
+  }
+}
+

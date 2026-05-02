@@ -1,0 +1,61 @@
+services:
+{% if has_frontend %}
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "{{ frontend_port }}:{{ frontend_port }}"
+    environment:
+      VITE_API_URL: http://localhost:{{ backend_port }}
+{% if has_backend %}
+    depends_on:
+      - backend
+{% endif %}
+{% endif %}
+
+{% if has_backend %}
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "{{ backend_port }}:{{ backend_port }}"
+    environment:
+      APP_ENV: development
+      API_PORT: {{ backend_port }}
+      DATABASE_URL: ${DATABASE_URL:-}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+{% if uses_postgres and "database" in containers %}
+    depends_on:
+      - database
+{% endif %}
+{% endif %}
+{% if include_services %}
+
+  service-template:
+    build:
+      context: ./services/template
+    ports:
+      - "8002:8002"
+    environment:
+      APP_NAME: Service Template
+      ENVIRONMENT: development
+      PORT: 8002
+      ENABLE_DEMO: "true"
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+{% endif %}
+
+{% if uses_postgres and "database" in containers %}
+  database:
+    image: postgres:16-alpine
+    ports:
+      - "{{ database_port }}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-{{ project_name | replace("-", "_") }}}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:
+{% endif %}

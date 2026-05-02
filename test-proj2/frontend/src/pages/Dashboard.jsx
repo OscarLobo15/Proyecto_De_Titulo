@@ -1,0 +1,41 @@
+import { Activity, Database, Server } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Card } from '../components/ui/Card.jsx';
+import { getHealth } from '../services/api.js';
+
+export function Dashboard() {
+  const [apiStatus, setApiStatus] = useState('checking');
+
+  useEffect(() => {
+    getHealth()
+      .then((response) => setApiStatus(response.status))
+      .catch(() => setApiStatus('offline'));
+  }, []);
+
+  return (
+    <div className="page-stack">
+      <div>
+        <span className="eyebrow">Fullstack foundation</span>
+        <h2>Dashboard</h2>
+      </div>
+      <div className="metrics-grid">
+        <Card>
+          <Activity size={22} />
+          <span>API</span>
+          <strong>{apiStatus}</strong>
+        </Card>
+        <Card>
+          <Server size={22} />
+          <span>Backend</span>
+          <strong>fastapi</strong>
+        </Card>
+        <Card>
+          <Database size={22} />
+          <span>Datos</span>
+          <strong>postgresql</strong>
+        </Card>
+      </div>
+    </div>
+  );
+}
+

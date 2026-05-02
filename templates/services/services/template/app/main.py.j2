@@ -1,0 +1,29 @@
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI(
+    title="{{ project_title }} Service Template",
+    version="0.1.0",
+    description="Microservicio base para estandarizar integraciones, agentes o procesos especializados.",
+)
+
+
+class WorkerRequest(BaseModel):
+    input: str
+    context: dict = {}
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok", "service": "dw-template"}
+
+
+@app.post("/run")
+def run_service(payload: WorkerRequest) -> dict:
+    return {
+        "status": "success",
+        "service": "template",
+        "input": payload.input,
+        "context": payload.context,
+        "message": "Reemplaza esta logica por tu flujo real de agente, integracion o microservicio.",
+    }

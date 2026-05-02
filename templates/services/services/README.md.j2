@@ -1,0 +1,26 @@
+# Servicios adicionales
+
+Esta carpeta contiene esqueletos de microservicios opcionales para separar integraciones, agentes, procesos asincronos o dominios independientes.
+
+```txt
+services/
+└── template/
+    ├── app/
+    ├── requirements.txt
+    ├── Dockerfile
+    └── .env.example
+```
+
+El servicio `template` es un esqueleto FastAPI para crear microservicios, agentes o integraciones independientes. Para agregar un nuevo servicio, copia `template/`, renombra la carpeta y cambia la logica de `app/main.py`.
+
+El `dev.sh` raiz puede levantar el servicio template con:
+
+```bash
+./dev.sh services
+```
+
+Endpoint base:
+
+```bash
+curl http://127.0.0.1:8002/health
+```

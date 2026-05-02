@@ -1,0 +1,25 @@
+services:
+  generator-backend:
+    build:
+      context: ./backend
+    container_name: reference-generator-api
+    environment:
+      GENERATOR_ENV: development
+      BACKEND_PORT: 8000
+      GENERATED_PROJECTS_DIR: generated
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/generated:/app/generated
+      - ./templates:/app/templates:ro
+
+  generator-frontend:
+    build:
+      context: ./frontend
+    container_name: reference-generator-web
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - generator-backend

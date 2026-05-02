@@ -1,0 +1,28 @@
+{
+  "name": "{{ project_name }}",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+{% if target_os == "mac" %}
+    "start": "./dev.sh start",
+    "dev": "./dev.sh start",
+    "stop": "./dev.sh stop",
+    "status": "./dev.sh status",
+    "setup": "./dev.sh setup"{% if has_frontend or has_backend %},{% endif %}
+{% else %}
+    "start": ".\\\\dev.ps1 start",
+    "dev": ".\\\\dev.ps1 start",
+    "stop": ".\\\\dev.ps1 stop",
+    "status": ".\\\\dev.ps1 status",
+    "setup": ".\\\\dev.ps1 setup"{% if has_frontend or has_backend %},{% endif %}
+{% endif %}
+{% if has_frontend %}
+    "dev:frontend": "npm --prefix frontend run dev",
+    "install:frontend": "npm --prefix frontend install"{% if has_backend %},{% endif %}
+{% endif %}
+{% if has_backend %}
+    "dev:backend": "cd backend && uvicorn app.main:app --reload --port {{ backend_port }}"
+{% endif %}
+  }
+}
+

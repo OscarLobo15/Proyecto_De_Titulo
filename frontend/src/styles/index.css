@@ -1,0 +1,598 @@
+:root {
+  --bg: #f4f4f4;
+  --surface: #ffffff;
+  --surface-2: #f4f4f4;
+  --ink: #161616;
+  --muted: #525252;
+  --subtle: #6f6f6f;
+  --line: #e0e0e0;
+  --line-strong: #8d8d8d;
+  --blue: #0f62fe;
+  --blue-hover: #0353e9;
+  --blue-soft: #edf5ff;
+  --green: #24a148;
+  --red: #da1e28;
+  --black: #161616;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.ibm-page {
+  min-height: 100vh;
+}
+
+.top-navigation {
+  align-items: center;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: flex-start;
+  min-height: 52px;
+  padding: 0 24px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.ibm-logo {
+  display: block;
+  height: 24px;
+  margin: 0;
+  object-fit: contain;
+  object-position: left center;
+  width: auto;
+}
+
+.hero-band {
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+  padding: clamp(34px, 6vw, 72px) clamp(20px, 5vw, 64px);
+}
+
+.hero-band h1 {
+  font-size: clamp(2.35rem, 6vw, 5rem);
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 0.96;
+  margin: 12px 0 0;
+  max-width: 980px;
+}
+
+.hero-band p,
+.panel-heading p,
+.preview-panel p {
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.hero-band p {
+  align-self: end;
+  font-size: 1.08rem;
+  max-width: 650px;
+}
+
+.eyebrow {
+  color: var(--blue);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.app-shell {
+  display: grid;
+  gap: 0;
+  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr);
+  padding: clamp(20px, 5vw, 64px);
+}
+
+.generator-panel,
+.preview-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.generator-panel {
+  display: grid;
+  gap: 0;
+  padding: 0;
+}
+
+.panel-heading {
+  display: grid;
+  gap: 8px;
+  padding: clamp(22px, 4vw, 36px) clamp(20px, 4vw, 36px) 0;
+}
+
+.panel-heading h2 {
+  font-size: clamp(1.6rem, 3.5vw, 2.4rem);
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.08;
+  margin: 0;
+}
+
+.step-header {
+  display: grid;
+  gap: 10px;
+  padding: 20px clamp(20px, 4vw, 36px) 0;
+}
+
+.progress-track {
+  background: var(--line);
+  height: 3px;
+  overflow: hidden;
+}
+
+.progress-track span {
+  background: var(--blue);
+  display: block;
+  height: 100%;
+  transition: width 200ms ease;
+}
+
+/* ── Step tabs ── */
+.step-tabs {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+
+.step-tabs button {
+  align-items: center;
+  background: #fff;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.85rem;
+  font-weight: 600;
+  gap: 6px;
+  min-height: 42px;
+  padding: 0 16px;
+  transition: background 100ms;
+}
+
+.step-tabs button.active {
+  box-shadow: inset 0 -3px 0 var(--blue);
+  color: var(--ink);
+}
+
+.step-tabs button:hover {
+  background: var(--surface-2);
+}
+
+/* ── Form surface ── */
+.form-surface {
+  background: var(--line);
+}
+
+/* ── Form grid (2-col with 1px gaps as separators) ── */
+.form-grid {
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.span-2 {
+  grid-column: 1 / -1;
+}
+
+/* ── Field (text inputs) ── */
+.field {
+  background: #fff;
+  display: grid;
+  gap: 8px;
+  padding: 18px 24px;
+}
+
+.field > span,
+.option-group > span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.field input,
+.field textarea {
+  background: var(--surface-2);
+  border: 0;
+  border-bottom: 2px solid var(--line-strong);
+  color: var(--ink);
+  min-height: 42px;
+  padding: 0 12px;
+  transition: border-color 120ms;
+  width: 100%;
+}
+
+.field input:focus,
+.field textarea:focus {
+  border-bottom-color: var(--blue);
+  outline: none;
+}
+
+.field textarea {
+  min-height: 80px;
+  padding-top: 10px;
+  resize: vertical;
+}
+
+/* ── Option group ── */
+.option-group {
+  background: #fff;
+  display: grid;
+  gap: 10px;
+  padding: 16px 24px;
+}
+
+/* ── Option card grid ── */
+.option-grid {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+}
+
+/* ── Option card ── */
+.option-card {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1.5px solid var(--line);
+  border-radius: 2px;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.875rem;
+  font-weight: 500;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 0 12px;
+  text-align: left;
+  transition: background 100ms, border-color 100ms, color 100ms;
+}
+
+.option-card:hover {
+  background: #e8e8e8;
+  border-color: var(--line-strong);
+}
+
+.option-card.selected {
+  background: var(--blue-soft);
+  border-color: var(--blue);
+  color: var(--blue);
+  font-weight: 600;
+}
+
+/* ── Delivery grid (step 4) ── */
+.delivery-grid {
+  background: var(--line);
+  display: grid;
+  gap: 1px;
+}
+
+/* ── Toggle row ── */
+.toggle-row {
+  align-items: center;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  gap: 14px;
+  min-height: 52px;
+  padding: 0 24px;
+  transition: background 100ms;
+}
+
+.toggle-row:hover {
+  background: var(--surface-2);
+}
+
+.toggle-row > span {
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+/* Toggle switch */
+.toggle-row input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #c6c6c6;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+  height: 20px;
+  position: relative;
+  transition: background 150ms;
+  width: 36px;
+}
+
+.toggle-row input[type="checkbox"]::after {
+  background: #fff;
+  border-radius: 50%;
+  content: '';
+  height: 14px;
+  left: 3px;
+  position: absolute;
+  top: 3px;
+  transition: left 150ms;
+  width: 14px;
+}
+
+.toggle-row input[type="checkbox"]:checked {
+  background: var(--blue);
+}
+
+.toggle-row input[type="checkbox"]:checked::after {
+  left: 19px;
+}
+
+/* ── Generate button ── */
+.generate-button {
+  align-items: center;
+  background: var(--blue);
+  border: 0;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  font-size: 0.9rem;
+  font-weight: 600;
+  gap: 10px;
+  justify-content: center;
+  min-height: 52px;
+  padding: 0 24px;
+  transition: background 100ms;
+  width: 100%;
+}
+
+.generate-button:hover {
+  background: var(--blue-hover);
+}
+
+.generate-button:disabled,
+.navigation-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* ── Command result ── */
+.command-result {
+  background: var(--black);
+  color: #fff;
+  display: grid;
+  gap: 10px;
+  padding: 20px 24px;
+}
+
+.command-result-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.command-result span,
+.command-result-label {
+  color: #c6c6c6;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.download-btn {
+  align-items: center;
+  background: transparent;
+  border: 1px solid #525252;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 600;
+  gap: 6px;
+  padding: 4px 12px;
+  text-decoration: none;
+  transition: background 100ms, border-color 100ms;
+  white-space: nowrap;
+}
+
+.download-btn:hover {
+  background: #262626;
+  border-color: #6f6f6f;
+}
+
+.command-result code {
+  background: #262626;
+  color: #f4f4f4;
+  font-family: "IBM Plex Mono", "Menlo", monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  padding: 14px;
+}
+
+.command-result button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid #525252;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 600;
+  gap: 8px;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 14px;
+  transition: background 100ms, border-color 100ms;
+  width: fit-content;
+}
+
+.command-result button:hover {
+  background: #262626;
+  border-color: #6f6f6f;
+}
+
+.spin {
+  animation: spin 850ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Notice ── */
+.notice {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0;
+  padding: 12px 24px;
+}
+
+.notice.error {
+  background: rgba(218, 30, 40, 0.08);
+  color: var(--red);
+}
+
+/* ── Navigation row ── */
+.navigation-row {
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 16px clamp(20px, 4vw, 36px);
+}
+
+.navigation-row button {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.875rem;
+  font-weight: 600;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 18px;
+  transition: background 100ms, border-color 100ms, color 100ms;
+}
+
+.navigation-row button:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+/* ── Preview panel ── */
+.preview-panel {
+  align-self: start;
+  border-left: 0;
+  display: grid;
+  gap: 16px;
+  padding: clamp(22px, 4vw, 32px);
+  position: sticky;
+  top: 76px;
+}
+
+.preview-panel h2 {
+  font-size: 1.8rem;
+  font-weight: 400;
+  margin: 0;
+}
+
+.architecture-flow {
+  display: grid;
+  gap: 1px;
+}
+
+.architecture-node {
+  align-items: center;
+  background: var(--surface-2);
+  display: grid;
+  gap: 3px 10px;
+  grid-template-columns: auto 1fr;
+  padding: 10px 14px;
+}
+
+.architecture-node svg {
+  color: var(--blue);
+  grid-row: span 2;
+}
+
+.architecture-node span {
+  color: var(--subtle);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.architecture-node strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+@media (max-width: 980px) {
+  .hero-band,
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-panel {
+    border-left: 1px solid var(--line);
+    position: static;
+  }
+}
+
+@media (max-width: 560px) {
+  .top-navigation {
+    padding: 0 14px;
+  }
+
+  .ibm-logo {
+    height: 24px;
+  }
+
+  .navigation-row {
+    flex-direction: column;
+  }
+
+  .navigation-row button {
+    justify-content: center;
+  }
+}

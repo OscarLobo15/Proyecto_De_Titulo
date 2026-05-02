@@ -1,0 +1,36 @@
+{% if uses_firebase %}
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { auth } from '../config/firebase.js';
+
+export function watchAuthState(callback) {
+  return onAuthStateChanged(auth, callback);
+}
+
+export async function loginWithEmail(email, password) {
+  const credential = await signInWithEmailAndPassword(auth, email, password);
+  return credential.user;
+}
+
+export async function logoutUser() {
+  await signOut(auth);
+}
+{% else %}
+const STORAGE_KEY = '{{ project_name }}:user';
+
+export function watchAuthState(callback) {
+  const stored = window.localStorage.getItem(STORAGE_KEY);
+  callback(stored ? JSON.parse(stored) : null);
+  return () => {};
+}
+
+export async function loginWithEmail(email) {
+  const user = { email, displayName: email.split('@')[0] };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+  return user;
+}
+
+export async function logoutUser() {
+  window.localStorage.removeItem(STORAGE_KEY);
+}
+{% endif %}
+

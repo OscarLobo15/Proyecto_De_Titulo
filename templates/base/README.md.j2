@@ -1,0 +1,114 @@
+# {{ project_title }}
+
+{{ description }}
+
+Proyecto base generado con arquitectura parametrizable.
+
+## Stack seleccionado
+
+- Tipo: {{ project.project_type }}
+- Perfil base: {{ project.project_profile }}
+{% if has_frontend %}- Frontend: {{ project.frontend }}{% endif %}
+{% if has_backend %}- Backend: {{ project.backend }}{% endif %}
+- Autenticacion: {{ project.auth }}
+- Base de datos: {{ project.database }}
+- Cloud objetivo: {{ cloud_label }}
+- Contenedores: {{ containers | join(", ") }}
+
+## Requisitos
+
+- Node.js 20+
+- Python 3.12+
+- Docker y Docker Compose, si usaras contenedores
+
+## Ejecucion local
+
+```bash
+cp .env.example .env
+{% if target_os == "mac" %}
+chmod +x dev.sh
+./dev.sh start
+{% else %}
+.\dev.ps1 start
+{% endif %}
+```
+
+URLs:
+
+{% if has_frontend %}- Frontend: http://localhost:{{ frontend_port }}{% endif %}
+{% if has_backend %}- Backend: http://localhost:{{ backend_port }}
+- Swagger: http://localhost:{{ backend_port }}/docs{% endif %}
+
+## Docker
+
+```bash
+docker compose up --build
+```
+
+## Estructura
+
+```txt
+{{ project_name }}/
+{% if has_frontend %}├── frontend/
+{% endif %}{% if has_backend %}├── backend/
+{% endif %}
+{% if include_services %}
+├── services/
+{% endif %}
+├── docker-compose.yml
+{% if target_os == "mac" %}├── dev.sh
+├── setup.sh
+{% else %}├── dev.ps1
+{% endif %}
+├── package.json
+└── .env.example
+```
+
+{% if include_services %}
+## Servicios adicionales
+
+Este proyecto incluye `services/template`, un microservicio base para separar integraciones, agentes o procesos especializados. Puedes levantarlo con:
+
+```bash
+{% if target_os == "mac" %}
+./dev.sh services
+{% else %}
+.\dev.ps1 services
+{% endif %}
+```
+
+Endpoint:
+
+```bash
+curl http://127.0.0.1:8002/health
+```
+{% endif %}
+
+## Variables de entorno
+
+Revisa `.env.example` y completa las credenciales necesarias antes de conectar servicios reales.
+
+{% if cloud == "gcp" %}
+## Despliegue GCP
+
+El proyecto esta preparado para empaquetarse en contenedores y desplegarse en Cloud Run. Construye las imagenes, publicalas en Artifact Registry y crea servicios separados para frontend y backend.
+{% elif cloud == "aws" %}
+## Despliegue AWS
+
+Puedes desplegar los contenedores en App Runner o ECS. Define las variables de entorno desde Secrets Manager o Parameter Store.
+{% elif cloud == "azure" %}
+## Despliegue Azure
+
+Puedes usar Azure Container Apps con imagenes publicadas en Azure Container Registry. Configura variables desde Container Apps Environment.
+{% else %}
+## Despliegue local
+
+El objetivo cloud seleccionado es local, por lo que `docker compose up --build` es el camino recomendado para validar la arquitectura completa.
+{% endif %}
+
+## Proximos pasos
+
+- Reemplazar servicios mock por integraciones reales.
+- Completar credenciales de autenticacion y base de datos.
+- Agregar pruebas de dominio.
+- Ajustar pipelines de CI/CD segun el cloud objetivo.

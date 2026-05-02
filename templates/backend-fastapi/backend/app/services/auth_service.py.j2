@@ -1,0 +1,11 @@
+from app.schemas.user_schema import UserResponse
+
+
+def authenticate_user(email: str, password: str) -> UserResponse:
+    return UserResponse(
+        id="demo-user",
+        email=email,
+        name=email.split("@")[0],
+        roles=["admin"],
+    )
+
