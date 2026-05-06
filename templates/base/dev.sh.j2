@@ -14,15 +14,12 @@ BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-{{ backend_port }}}"
 FRONTEND_HOST="${FRONTEND_HOST:-0.0.0.0}"
 FRONTEND_PORT="${FRONTEND_PORT:-{{ frontend_port }}}"
-SERVICE_TEMPLATE_PORT="${SERVICE_TEMPLATE_PORT:-8002}"
 OPEN_BROWSER="${OPEN_BROWSER:-true}"
 
 BACKEND_LOG="${BACKEND_LOG:-/tmp/{{ project_name }}_backend.log}"
 FRONTEND_LOG="${FRONTEND_LOG:-/tmp/{{ project_name }}_frontend.log}"
-SERVICE_TEMPLATE_LOG="${SERVICE_TEMPLATE_LOG:-/tmp/{{ project_name }}_service_template.log}"
 BACKEND_PID_FILE="${BACKEND_PID_FILE:-/tmp/{{ project_name }}_backend.pid}"
 FRONTEND_PID_FILE="${FRONTEND_PID_FILE:-/tmp/{{ project_name }}_frontend.pid}"
-SERVICE_TEMPLATE_PID_FILE="${SERVICE_TEMPLATE_PID_FILE:-/tmp/{{ project_name }}_service_template.pid}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -103,6 +100,8 @@ foreground() {
 {% if has_backend %}
     print_line "${DIM}Stopping backend...${NC}"
     kill "$backend_pid" >/dev/null 2>&1 || true
+{% else %}
+    :
 {% endif %}
   }
   trap cleanup_foreground EXIT INT TERM
@@ -177,6 +176,9 @@ wait_for_url() {
 }
 
 ensure_backend_deps() {
+{% if not has_backend %}
+  return 0
+{% endif %}
   if [ ! -d "$VENV_DIR" ]; then
     print_line "${YELLOW}Python venv not found. Creating .venv...${NC}"
     python3 -m venv "$VENV_DIR"
@@ -308,59 +310,72 @@ start_services() {
   print_line "${DIM}Services require a backend project.${NC}"
   return 0
 {% endif %}
-  [ -d "$SERVICES_DIR/template" ] || {
+  [ -d "$SERVICES_DIR" ] || {
     print_line "${DIM}No service skeletons configured.${NC}"
     return 0
   }
   ensure_backend_deps
   ensure_service_deps
-  stop_port "service-template" "$SERVICE_TEMPLATE_PORT"
-  print_line "${CYAN}Starting template service on http://127.0.0.1:${SERVICE_TEMPLATE_PORT}${NC}"
-  > "$SERVICE_TEMPLATE_LOG"
-  cd "$SERVICES_DIR/template"
-  nohup "$VENV_DIR/bin/python" -m uvicorn app.main:app --host 127.0.0.1 --port "$SERVICE_TEMPLATE_PORT" >"$SERVICE_TEMPLATE_LOG" 2>&1 </dev/null &
+{% for service in extra_services %}
+  local {{ service.slug | replace("-", "_") }}_port="{{ '${' }}{{ service.slug | replace("-", "_") | upper }}_PORT:-{{ service.port }}}"
+  local {{ service.slug | replace("-", "_") }}_log="{{ '${' }}{{ service.slug | replace("-", "_") | upper }}_LOG:-/tmp/{{ project_name }}_{{ service.slug | replace("-", "_") }}.log}"
+  local {{ service.slug | replace("-", "_") }}_pid_file="{{ '${' }}{{ service.slug | replace("-", "_") | upper }}_PID_FILE:-/tmp/{{ project_name }}_{{ service.slug | replace("-", "_") }}.pid}"
+  stop_port "{{ service.slug }}" "${{ service.slug | replace("-", "_") }}_port"
+  print_line "${CYAN}Starting {{ service.name }} on http://127.0.0.1:${{ service.slug | replace("-", "_") }}_port${NC}"
+  > "${{ service.slug | replace("-", "_") }}_log"
+  cd "$SERVICES_DIR/{{ service.slug }}"
+  nohup "$VENV_DIR/bin/python" -m uvicorn app.main:app --host 127.0.0.1 --port "${{ service.slug | replace("-", "_") }}_port" >"${{ service.slug | replace("-", "_") }}_log" 2>&1 </dev/null &
   local pid=$!
   disown "$pid" 2>/dev/null || true
-  write_pid_file "$SERVICE_TEMPLATE_PID_FILE" "$pid"
+  write_pid_file "${{ service.slug | replace("-", "_") }}_pid_file" "$pid"
 
-  if wait_for_url "http://127.0.0.1:${SERVICE_TEMPLATE_PORT}/health" 30; then
+  if wait_for_url "http://127.0.0.1:${{ service.slug | replace("-", "_") }}_port/health" 30; then
     sleep 1
     if ! is_running "$pid"; then
-      print_line "${RED}Template service exited after startup. Last log lines:${NC}"
-      tail -40 "$SERVICE_TEMPLATE_LOG" || true
+      print_line "${RED}{{ service.name }} exited after startup. Last log lines:${NC}"
+      tail -40 "${{ service.slug | replace("-", "_") }}_log" || true
       exit 1
     fi
-    print_line "${GREEN}Template service ready.${NC}"
+    print_line "${GREEN}{{ service.name }} ready.${NC} http://127.0.0.1:${{ service.slug | replace("-", "_") }}_port"
   else
-    print_line "${RED}Template service did not become healthy.${NC}"
-    tail -40 "$SERVICE_TEMPLATE_LOG" || true
+    print_line "${RED}{{ service.name }} did not become healthy.${NC}"
+    tail -40 "${{ service.slug | replace("-", "_") }}_log" || true
     exit 1
   fi
   cd "$PROJECT_ROOT"
+{% endfor %}
 }
 
 stop_all() {
-  stop_pid_file "Template service" "$SERVICE_TEMPLATE_PID_FILE"
+{% for service in extra_services %}
+  stop_pid_file "{{ service.name }}" "{{ '${' }}{{ service.slug | replace("-", "_") | upper }}_PID_FILE:-/tmp/{{ project_name }}_{{ service.slug | replace("-", "_") }}.pid}"
+{% endfor %}
   stop_pid_file "Frontend" "$FRONTEND_PID_FILE"
   stop_pid_file "Backend" "$BACKEND_PID_FILE"
-  stop_port "service-template" "$SERVICE_TEMPLATE_PORT"
+{% for service in extra_services %}
+  stop_port "{{ service.slug }}" "{{ '${' }}{{ service.slug | replace("-", "_") | upper }}_PORT:-{{ service.port }}}"
+{% endfor %}
   stop_port "frontend" "$FRONTEND_PORT"
   stop_port "backend" "$BACKEND_PORT"
 }
 
 status() {
   banner
+{% if has_backend %}
   wait_for_url "http://${BACKEND_HOST}:${BACKEND_PORT}/health" 2 \
     && print_line "${GREEN}Backend running${NC}  http://${BACKEND_HOST}:${BACKEND_PORT}" \
     || print_line "${RED}Backend not running${NC}"
+{% endif %}
+{% if has_frontend %}
   wait_for_url "http://127.0.0.1:${FRONTEND_PORT}" 2 \
     && print_line "${GREEN}Frontend running${NC} http://localhost:${FRONTEND_PORT}" \
     || print_line "${RED}Frontend not running${NC}"
-  if [ -d "$SERVICES_DIR/template" ]; then
-    wait_for_url "http://127.0.0.1:${SERVICE_TEMPLATE_PORT}/health" 2 \
-      && print_line "${GREEN}Template service running${NC} http://127.0.0.1:${SERVICE_TEMPLATE_PORT}" \
-      || print_line "${YELLOW}Template service not running${NC}"
-  fi
+{% endif %}
+{% for service in extra_services %}
+  wait_for_url "http://127.0.0.1:{{ '${' }}{{ service.slug | replace("-", "_") | upper }}_PORT:-{{ service.port }}}/health" 2 \
+    && print_line "${GREEN}{{ service.name }} running${NC} http://127.0.0.1:{{ '${' }}{{ service.slug | replace("-", "_") | upper }}_PORT:-{{ service.port }}}" \
+    || print_line "${YELLOW}{{ service.name }} not running${NC}"
+{% endfor %}
 }
 
 case "${1:-help}" in
@@ -401,7 +416,7 @@ case "${1:-help}" in
     start_services
     ;;
   logs)
-    tail -f "$BACKEND_LOG" "$FRONTEND_LOG" "$SERVICE_TEMPLATE_LOG" 2>/dev/null || true
+    tail -f "$BACKEND_LOG" "$FRONTEND_LOG"{% for service in extra_services %} "{{ '${' }}{{ service.slug | replace("-", "_") | upper }}_LOG:-/tmp/{{ project_name }}_{{ service.slug | replace("-", "_") }}.log}"{% endfor %} 2>/dev/null || true
     ;;
   setup)
     setup_all

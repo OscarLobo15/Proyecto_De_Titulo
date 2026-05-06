@@ -22,9 +22,12 @@ export function ArchitecturePreview({ config }) {
     config.project_type !== 'api' && ['auth', config.auth],
     config.project_type !== 'web' && ['database', config.database],
     ['cloud', config.cloud],
-    ['docker', config.include_docker ? 'docker compose' : 'sin docker'],
-    config.project_type !== 'web' && config.project_profile === 'ai' && ['langgraph', config.include_langgraph ? 'LangGraph + LangChain' : 'sin LangGraph'],
-    config.project_type !== 'web' && ['services', config.include_services ? 'services/' : 'sin servicios extra'],
+    ['docker', config.include_docker ? `${config.containers.join(' + ')} en Docker` : 'sin docker'],
+    config.project_profile === 'ai' && [
+      'langgraph',
+      config.project_type === 'web' ? 'Modulo Agente frontend' : 'LangGraph + Gemini 2.5 Flash',
+    ],
+    config.project_type !== 'web' && ['services', config.service_count > 0 ? `${config.service_count} servicios` : 'sin servicios extra'],
   ].filter(Boolean);
 
   return (

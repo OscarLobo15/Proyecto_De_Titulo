@@ -1,0 +1,22 @@
+# Deploy GCP
+
+Archivos generados para desplegar los contenedores seleccionados en Cloud Run.
+
+## Ejecutar
+
+```bash
+PROJECT_ID=tu-proyecto-gcp REGION=us-central1 ./deploy/gcp/deploy.sh
+```
+
+## Archivos
+
+- `cloudbuild.yaml`: build, push y deploy de las imagenes.
+- `deploy.sh`: habilita APIs, crea Artifact Registry si falta y ejecuta Cloud Build.
+
+## Contenedores incluidos
+
+{% if has_frontend %}- `{{ project_name }}-frontend` en puerto `{{ frontend_port }}`{% endif %}
+{% if has_backend %}- `{{ project_name }}-backend` en puerto `{{ backend_port }}`{% endif %}
+{% for service in extra_services %}- `{{ project_name }}-{{ service.slug }}` en puerto `{{ service.port }}`{% endfor %}
+
+Configura secretos reales en Cloud Run despues del primer despliegue para Firebase, Supabase, base de datos o Gemini cuando apliquen.

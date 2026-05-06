@@ -1,7 +1,21 @@
 # AWS App Runner / ECS
 
+## Servicios generados
+
+{% for target in deploy_targets %}- `{{ target.service_name }}` desde `{{ target.context }}` en puerto `{{ target.port }}`
+{% endfor %}
+
+## Camino rapido
+
+```bash
+AWS_ACCOUNT_ID=123456789012 AWS_REGION=us-east-1 ./deploy/aws/deploy.sh
+```
+
+Esto usa `deploy.py` y `deploy/aws/services.json`.
+
+## Pasos
+
 1. Publica imagenes en Amazon ECR.
 2. Usa App Runner para una salida rapida o ECS Fargate para mayor control.
-3. Define variables de entorno desde Secrets Manager.
-4. Expone backend y frontend con dominios separados o un balanceador.
-
+3. Define variables de entorno desde Secrets Manager o Parameter Store.
+4. Expone solo los servicios publicos; servicios internos deben quedar detras del backend o red privada.

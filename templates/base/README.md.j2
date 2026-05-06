@@ -14,6 +14,8 @@ Proyecto base generado con arquitectura parametrizable.
 - Base de datos: {{ project.database }}
 - Cloud objetivo: {{ cloud_label }}
 - Contenedores: {{ containers | join(", ") }}
+{% if include_services %}- Servicios adicionales: {{ service_count }}{% endif %}
+{% if include_ai %}- IA: {% if include_ai_backend %}LangGraph + Gemini 2.5 Flash{% else %}Modulo Agente frontend mock{% endif %}{% endif %}
 
 ## Requisitos
 
@@ -56,6 +58,16 @@ docker compose up --build
 ├── services/
 {% endif %}
 ├── docker-compose.yml
+├── docs/SETUP_GUIDE.md
+{% if cloud != "local" %}├── deploy.py
+{% endif %}{% if cloud == "gcp" %}├── deploy/gcp/cloudbuild.yaml
+├── deploy/gcp/deploy.sh
+├── deploy/gcp/services.json
+{% elif cloud == "aws" %}├── deploy/aws/deploy.sh
+├── deploy/aws/services.json
+{% elif cloud == "azure" %}├── deploy/azure/deploy.sh
+├── deploy/azure/services.json
+{% endif %}
 {% if target_os == "mac" %}├── dev.sh
 ├── setup.sh
 {% else %}├── dev.ps1
@@ -86,20 +98,20 @@ curl http://127.0.0.1:8002/health
 
 ## Variables de entorno
 
-Revisa `.env.example` y completa las credenciales necesarias antes de conectar servicios reales.
+Revisa `.env.example` y completa las credenciales necesarias antes de conectar servicios reales. El paso a paso esta en `docs/SETUP_GUIDE.md`.
 
 {% if cloud == "gcp" %}
 ## Despliegue GCP
 
-El proyecto esta preparado para empaquetarse en contenedores y desplegarse en Cloud Run. Construye las imagenes, publicalas en Artifact Registry y crea servicios separados para frontend y backend.
+El proyecto incluye `deploy.py`, `deploy/gcp/cloudbuild.yaml`, `deploy/gcp/deploy.sh` y `deploy/gcp/services.json`. Estos archivos construyen y despliegan solo los contenedores seleccionados en Cloud Run.
 {% elif cloud == "aws" %}
 ## Despliegue AWS
 
-Puedes desplegar los contenedores en App Runner o ECS. Define las variables de entorno desde Secrets Manager o Parameter Store.
+El proyecto incluye `deploy.py`, `deploy/aws/deploy.sh` y `deploy/aws/services.json`. Estos archivos publican las imagenes en ECR y dejan el proyecto listo para App Runner o ECS segun los contenedores seleccionados.
 {% elif cloud == "azure" %}
 ## Despliegue Azure
 
-Puedes usar Azure Container Apps con imagenes publicadas en Azure Container Registry. Configura variables desde Container Apps Environment.
+El proyecto incluye `deploy.py`, `deploy/azure/deploy.sh` y `deploy/azure/services.json`. Estos archivos publican las imagenes en ACR y despliegan Azure Container Apps segun los contenedores seleccionados.
 {% else %}
 ## Despliegue local
 
@@ -109,6 +121,6 @@ El objetivo cloud seleccionado es local, por lo que `docker compose up --build` 
 ## Proximos pasos
 
 - Reemplazar servicios mock por integraciones reales.
-- Completar credenciales de autenticacion y base de datos.
+- Completar credenciales de autenticacion, base de datos e IA cuando apliquen.
 - Agregar pruebas de dominio.
 - Ajustar pipelines de CI/CD segun el cloud objetivo.

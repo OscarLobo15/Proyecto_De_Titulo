@@ -8,7 +8,11 @@ httpx>=0.28.0
 {% if uses_postgres %}
 psycopg[binary]>=3.2.3
 {% endif %}
+{% if uses_supabase %}
+supabase>=2.10.0
+{% endif %}
 {% if include_langgraph %}
 langgraph>=0.3.0
 langchain-core>=0.3.0
+langchain-google-genai>=2.0.0
 {% endif %}

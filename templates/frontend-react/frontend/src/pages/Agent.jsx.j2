@@ -1,0 +1,76 @@
+import { History, Send } from 'lucide-react';
+import { useState } from 'react';
+
+const initialMessages = [
+  { role: 'assistant', text: 'Hola. Soy el agente base del prototipo. ¿en qué puedo ayudarte?' },
+];
+
+export function Agent() {
+  const [messages, setMessages] = useState(initialMessages);
+  const [draft, setDraft] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+
+    setMessages((current) => [
+      ...current,
+      { role: 'user', text },
+      { role: 'assistant', text: 'Respuesta mock. Conecta Gemini 2.5 Flash y LangGraph siguiendo docs/SETUP_GUIDE.md.' },
+    ]);
+    setDraft('');
+  }
+
+  return (
+    <div className={`agent-layout ${historyOpen ? 'history-open' : ''}`}>
+      <section className="agent-chat">
+        <div className="agent-header">
+          <div className="agent-header-title">
+            <span className="eyebrow">IA</span>
+            <h2>Agente</h2>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => setHistoryOpen((open) => !open)}
+            title="Historial"
+          >
+            <History size={16} />
+          </button>
+        </div>
+        <div className="chat-feed">
+          {messages.map((message, index) => (
+            <div className={`chat-message ${message.role}`} key={`${message.role}-${index}`}>
+              {message.text}
+            </div>
+          ))}
+        </div>
+        <form className="chat-composer" onSubmit={handleSubmit}>
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Escribe un mensaje…"
+          />
+          <button type="submit" title="Enviar">
+            <Send size={16} />
+          </button>
+        </form>
+      </section>
+
+      <aside className="agent-history" aria-label="Historial del agente">
+        <div className="agent-history-header">
+          <span className="eyebrow">Historial</span>
+        </div>
+        <div className="agent-history-list">
+          {messages.map((message, index) => (
+            <button key={`${message.role}-history-${index}`} type="button">
+              {message.role === 'user' ? message.text : 'Respuesta del agente'}
+            </button>
+          ))}
+        </div>
+      </aside>
+    </div>
+  );
+}

@@ -1,0 +1,102 @@
+substitutions:
+  _REGION: us-central1
+  _REPOSITORY: {{ project_name }}-repo
+
+steps:
+{% if has_frontend %}
+  - id: build-frontend
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/{{ project_name }}-frontend:$SHORT_SHA
+      - ./frontend
+
+  - id: push-frontend
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/{{ project_name }}-frontend:$SHORT_SHA
+
+  - id: deploy-frontend
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - {{ project_name }}-frontend
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/{{ project_name }}-frontend:$SHORT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --port={{ frontend_port }}
+{% if has_backend %}
+      - --set-env-vars=VITE_API_URL=https://{{ project_name }}-backend-REPLACE_WITH_CLOUD_RUN_HASH-${_REGION}.a.run.app
+{% endif %}
+{% endif %}
+{% if has_backend %}
+
+  - id: build-backend
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/{{ project_name }}-backend:$SHORT_SHA
+      - ./backend
+
+  - id: push-backend
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/{{ project_name }}-backend:$SHORT_SHA
+
+  - id: deploy-backend
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - {{ project_name }}-backend
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/{{ project_name }}-backend:$SHORT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --port={{ backend_port }}
+      - --set-env-vars=APP_ENV=production,API_PORT={{ backend_port }}
+{% endif %}
+{% for service in extra_services %}
+
+  - id: build-{{ service.slug }}
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/{{ project_name }}-{{ service.slug }}:$SHORT_SHA
+      - ./services/{{ service.slug }}
+
+  - id: push-{{ service.slug }}
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/{{ project_name }}-{{ service.slug }}:$SHORT_SHA
+
+  - id: deploy-{{ service.slug }}
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - {{ project_name }}-{{ service.slug }}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/{{ project_name }}-{{ service.slug }}:$SHORT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --no-allow-unauthenticated
+      - --port={{ service.port }}
+      - --set-env-vars=ENVIRONMENT=production,PORT={{ service.port }}
+{% endfor %}
+
+images:
+{% if has_frontend %}  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/{{ project_name }}-frontend:$SHORT_SHA
+{% endif %}{% if has_backend %}  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/{{ project_name }}-backend:$SHORT_SHA
+{% endif %}{% for service in extra_services %}  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/{{ project_name }}-{{ service.slug }}:$SHORT_SHA
+{% endfor %}

@@ -1,24 +1,62 @@
-import { Gauge, Settings } from 'lucide-react';
+import { Bot, Cpu, Gauge, Layers, Settings } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 export function Sidebar() {
+  const modules = Array.from({ length: 3 }, (_, index) => index + 1);
+
   return (
     <aside className="sidebar">
-      <div className="brand">
-        <span className="brand-mark">RA</span>
-        <span>{{ project_title }}</span>
+      <div className="sidebar-inner">
+        <div className="brand">
+          <div className="brand-mark">RA</div>
+          <span className="brand-name">{{ project_title }}</span>
+        </div>
+        <nav>
+          <NavLink to="/app/dashboard">
+            <Gauge size={16} />
+            Principal
+          </NavLink>
+
+          <div className="nav-section">
+            <div className="nav-label">Módulos</div>
+            {modules.map((moduleId) => (
+              <NavLink key={moduleId} to={`/app/module/${moduleId}`}>
+                <Layers size={16} />
+                Módulo {moduleId}
+              </NavLink>
+            ))}
+          </div>
+{% if include_services and extra_services %}
+
+          <div className="nav-section">
+            <div className="nav-label">Servicios</div>
+{% for service in extra_services %}
+            <NavLink to="/app/service/{{ service.slug }}">
+              <Cpu size={16} />
+              {{ service.name }}
+            </NavLink>
+{% endfor %}
+          </div>
+{% endif %}
+{% if include_ai_ui %}
+
+          <div className="nav-section">
+            <div className="nav-label">IA</div>
+            <NavLink to="/app/agent">
+              <Bot size={16} />
+              Agente
+            </NavLink>
+          </div>
+{% endif %}
+
+          <div className="nav-section">
+            <NavLink to="/app/settings">
+              <Settings size={16} />
+              Configuración
+            </NavLink>
+          </div>
+        </nav>
       </div>
-      <nav>
-        <NavLink to="/app/dashboard">
-          <Gauge size={18} />
-          Dashboard
-        </NavLink>
-        <NavLink to="/app/settings">
-          <Settings size={18} />
-          Settings
-        </NavLink>
-      </nav>
     </aside>
   );
 }
-

@@ -1,8 +1,24 @@
 # GCP Cloud Run
 
-1. Construye las imagenes Docker de `frontend` y `backend`.
-2. Publicalas en Artifact Registry.
-3. Crea dos servicios Cloud Run.
-4. Configura `VITE_API_URL` apuntando al backend.
-5. Registra secretos para credenciales Firebase o base de datos.
+## Imagenes a publicar
 
+{% if has_frontend %}- `frontend`: UI React/Vite{% endif %}
+{% if has_backend %}- `backend`: API FastAPI{% endif %}
+{% for service in extra_services %}- `{{ service.slug }}`: microservicio en `services/{{ service.slug }}`{% endfor %}
+
+## Pasos
+
+Camino rapido:
+
+```bash
+PROJECT_ID=tu-proyecto-gcp REGION=us-central1 ./deploy/gcp/deploy.sh
+```
+
+Ese script usa `deploy/gcp/cloudbuild.yaml`.
+
+1. Crea un Artifact Registry para las imagenes.
+2. Construye y publica una imagen por contenedor listado arriba.
+3. Crea un servicio Cloud Run por imagen.
+4. Configura `VITE_API_URL` apuntando al servicio `backend` si existe.
+5. Registra credenciales como secretos: Firebase, Supabase, `DATABASE_URL` o `GOOGLE_API_KEY` segun tus selecciones.
+6. La base de datos no se despliega como contenedor; usa Cloud SQL, Firestore o Supabase administrado segun corresponda.

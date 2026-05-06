@@ -1,0 +1,84 @@
+# Guia de configuracion
+
+Este proyecto fue generado para quedar listo como prototipo base. La logica de negocio queda vacia a proposito: primero valida arquitectura, login, servicios y despliegue.
+
+## 1. Levantar local
+
+```bash
+cp .env.example .env
+{% if target_os == "mac" %}
+chmod +x dev.sh setup.sh
+./dev.sh setup
+./dev.sh start
+{% else %}
+.\dev.ps1 setup
+.\dev.ps1 start
+{% endif %}
+```
+
+{% if has_frontend %}- Frontend: http://localhost:{{ frontend_port }}{% endif %}
+{% if has_backend %}- Backend: http://localhost:{{ backend_port }}
+- Swagger: http://localhost:{{ backend_port }}/docs{% endif %}
+{% for service in extra_services %}- {{ service.name }}: http://127.0.0.1:{{ service.port }}/health{% endfor %}
+
+## 2. Autenticacion
+
+{% if project.auth == "firebase" %}
+1. Crea un proyecto en Firebase Console.
+2. Activa Authentication con Email/Password.
+3. Copia la configuracion web a `.env`: `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID` y `VITE_FIREBASE_APP_ID`.
+4. Reinicia el frontend.
+{% elif project.auth == "supabase" %}
+1. Crea un proyecto en Supabase.
+2. En Authentication, activa Email provider.
+3. Copia `Project URL` y `anon public key` a `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`.
+4. Si el backend debe operar con permisos elevados, agrega `SUPABASE_SERVICE_ROLE_KEY` solo en backend o secretos cloud.
+{% else %}
+Este proyecto no incluye login. La app abre directo en `/app/dashboard`.
+{% endif %}
+
+## 3. Base de datos
+
+{% if project.database == "postgresql" %}
+Define `DATABASE_URL` apuntando a una base PostgreSQL administrada. Por politica del asset, la base de datos no se levanta como contenedor.
+{% elif project.database == "firestore" %}
+Usa el mismo proyecto Firebase y configura credenciales de backend segun el mecanismo de despliegue elegido.
+{% elif project.database == "supabase" %}
+Usa `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` para operaciones server-side, y las variables `VITE_SUPABASE_*` para cliente.
+{% else %}
+No se configuro base de datos.
+{% endif %}
+
+## 4. IA con Gemini 2.5 Flash
+
+{% if include_ai %}
+{% if include_ai_backend %}
+1. Crea una API key de Google AI Studio o Vertex AI.
+2. Agrega `GOOGLE_API_KEY` en `.env`.
+3. Mantén `GEMINI_MODEL=gemini-2.5-flash` o cambia el modelo si tu cuenta usa otro nombre.
+4. El backend ya incluye LangGraph y `langchain-google-genai`; conecta el grafo real en `backend/app/routes` o crea un servicio dedicado en `services/`.
+5. El frontend incluye `/app/agent` con chat mock e historial lateral para reemplazar por el endpoint real.
+{% else %}
+Este proyecto es solo frontend, por lo que incluye `/app/agent` con chat mock e historial lateral sin dependencias de backend. Cuando agregues backend, conecta el formulario del chat a un endpoint real y usa `GOOGLE_API_KEY`/Gemini 2.5 Flash del lado servidor.
+{% endif %}
+{% else %}
+No se selecciono IA, por lo que no se agregan LangGraph, Gemini ni modulo Agente.
+{% endif %}
+
+## 5. Docker y cloud
+
+Siempre se generan contenedores para las piezas ejecutables seleccionadas: frontend, backend y servicios adicionales. La base de datos se considera administrada y se conecta por variables de entorno.
+
+```bash
+docker compose up --build
+```
+
+{% if cloud == "gcp" %}
+Para GCP, usa `python deploy.py --project-id <id>` o `./deploy/gcp/deploy.sh`. Los archivos se adaptan a los contenedores seleccionados.
+{% elif cloud == "aws" %}
+Para AWS, usa `python deploy.py --account-id <id>` o `./deploy/aws/deploy.sh`. Los archivos se adaptan a los contenedores seleccionados.
+{% elif cloud == "azure" %}
+Para Azure, usa `python deploy.py --resource-group <rg> --environment <env> --registry <acr>` o `./deploy/azure/deploy.sh`. Los archivos se adaptan a los contenedores seleccionados.
+{% else %}
+El objetivo seleccionado es local Docker; cuando cambies a cloud, replica las mismas variables como secretos.
+{% endif %}

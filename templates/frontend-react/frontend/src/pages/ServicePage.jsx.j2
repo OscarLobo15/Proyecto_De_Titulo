@@ -1,0 +1,113 @@
+import { Activity, ExternalLink } from 'lucide-react';
+import { useState } from 'react';
+import { useParams } from 'react-router-dom';
+
+const SERVICE_MAP = {
+{% for service in extra_services %}
+  '{{ service.slug }}': { name: '{{ service.name }}', port: {{ service.port }}, slug: '{{ service.slug }}' },
+{% endfor %}
+};
+
+export function ServicePage() {
+  const { serviceSlug } = useParams();
+  const service = SERVICE_MAP[serviceSlug];
+  const [status, setStatus] = useState('idle');
+
+  if (!service) {
+    return (
+      <div className="service-page">
+        <div className="page-header">
+          <span className="eyebrow">Error</span>
+          <h2>Servicio no encontrado</h2>
+        </div>
+      </div>
+    );
+  }
+
+  async function checkHealth() {
+    setStatus('checking');
+    try {
+      const response = await fetch(`http://localhost:${service.port}/health`, {
+        signal: AbortSignal.timeout(4000),
+      });
+      const data = await response.json();
+      setStatus(data.status === 'ok' ? 'ok' : 'error');
+    } catch {
+      setStatus('error');
+    }
+  }
+
+  const statusLabel = {
+    idle: 'Sin verificar',
+    checking: 'Verificando…',
+    ok: 'Online',
+    error: 'Offline',
+  }[status];
+
+  return (
+    <div className="service-page">
+      <div className="page-header">
+        <span className="eyebrow">Servicio</span>
+        <h2>{service.name}</h2>
+      </div>
+
+      <div className="service-meta">
+        <div className="service-meta-row">
+          <span className="service-meta-label">Nombre</span>
+          <span className="service-meta-value">{service.name}</span>
+        </div>
+        <div className="service-meta-row">
+          <span className="service-meta-label">Identificador</span>
+          <span className="service-meta-value">{service.slug}</span>
+        </div>
+        <div className="service-meta-row">
+          <span className="service-meta-label">Puerto local</span>
+          <span className="service-meta-value">{service.port}</span>
+        </div>
+        <div className="service-meta-row">
+          <span className="service-meta-label">Health endpoint</span>
+          <span className="service-meta-value">
+            <a
+              className="text-link"
+              href={`http://localhost:${service.port}/health`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              /health
+            </a>
+          </span>
+        </div>
+        <div className="service-meta-row">
+          <span className="service-meta-label">Estado</span>
+          <span className="service-meta-value">
+            <span className="service-status">
+              <span className={`status-dot ${status === 'idle' ? 'checking' : status}`} />
+              {statusLabel}
+            </span>
+          </span>
+        </div>
+      </div>
+
+      <div className="home-actions">
+        <button
+          className="button"
+          type="button"
+          onClick={checkHealth}
+          disabled={status === 'checking'}
+        >
+          <Activity size={16} />
+          Verificar estado
+        </button>
+        <a
+          className="button secondary"
+          href={`http://localhost:${service.port}/docs`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <ExternalLink size={16} />
+          Ver API docs
+        </a>
+      </div>
+    </div>
+  );
+}

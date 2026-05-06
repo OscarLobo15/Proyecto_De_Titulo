@@ -1,0 +1,22 @@
+# Deploy AWS
+
+Archivos generados para publicar los contenedores seleccionados en Amazon ECR y dejarlos listos para App Runner o ECS Fargate.
+
+## Ejecutar
+
+```bash
+AWS_ACCOUNT_ID=123456789012 AWS_REGION=us-east-1 ./deploy/aws/deploy.sh
+```
+
+Para crear servicios App Runner desde el script, agrega el role ARN:
+
+```bash
+AWS_ACCOUNT_ID=123456789012 ./deploy/aws/deploy.sh --apprunner-role-arn arn:aws:iam::123456789012:role/AppRunnerECRAccessRole
+```
+
+## Contenedores incluidos
+
+{% for target in deploy_targets %}- `{{ target.service_name }}` desde `{{ target.context }}` en puerto `{{ target.port }}`
+{% endfor %}
+
+Configura secretos reales en Secrets Manager o Parameter Store y conéctalos al servicio final.

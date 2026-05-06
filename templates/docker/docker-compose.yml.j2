@@ -24,38 +24,26 @@ services:
       API_PORT: {{ backend_port }}
       DATABASE_URL: ${DATABASE_URL:-}
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
-{% if uses_postgres and "database" in containers %}
-    depends_on:
-      - database
-{% endif %}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
 {% endif %}
 {% if include_services %}
 
-  service-template:
+{% for service in extra_services %}
+  {{ service.slug }}:
     build:
-      context: ./services/template
+      context: ./services/{{ service.slug }}
     ports:
-      - "8002:8002"
+      - "{{ service.port }}:{{ service.port }}"
     environment:
-      APP_NAME: Service Template
+      APP_NAME: {{ service.name }}
       ENVIRONMENT: development
-      PORT: 8002
+      PORT: {{ service.port }}
       ENABLE_DEMO: "true"
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
-{% endif %}
-
-{% if uses_postgres and "database" in containers %}
-  database:
-    image: postgres:16-alpine
-    ports:
-      - "{{ database_port }}:5432"
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-{{ project_name | replace("-", "_") }}}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-
-volumes:
-  postgres-data:
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+{% endfor %}
 {% endif %}

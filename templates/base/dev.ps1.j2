@@ -19,12 +19,8 @@ $FrontendHost = $env:FRONTEND_HOST
 if (-not $FrontendHost) { $FrontendHost = "0.0.0.0" }
 $FrontendPort = $env:FRONTEND_PORT
 if (-not $FrontendPort) { $FrontendPort = "{{ frontend_port }}" }
-$ServiceTemplatePort = $env:SERVICE_TEMPLATE_PORT
-if (-not $ServiceTemplatePort) { $ServiceTemplatePort = "8002" }
-
 $BackendLog = Join-Path $env:TEMP "{{ project_name }}_backend.log"
 $FrontendLog = Join-Path $env:TEMP "{{ project_name }}_frontend.log"
-$ServiceLog = Join-Path $env:TEMP "{{ project_name }}_service_template.log"
 
 function Write-Info($Message) { Write-Host $Message -ForegroundColor Cyan }
 function Write-Ok($Message) { Write-Host $Message -ForegroundColor Green }
@@ -148,29 +144,37 @@ function Start-Services {
   Write-Warn "Services require a backend project."
   return
 {% endif %}
-  if (-not (Test-Path (Join-Path $ServicesDir "template"))) {
+  if (-not (Test-Path $ServicesDir)) {
     Write-Warn "No service skeletons configured."
     return
   }
   Ensure-BackendDeps
   Ensure-ServiceDeps
-  Stop-Port $ServiceTemplatePort
   $Python = Join-Path $VenvDir "Scripts/python.exe"
-  $ServiceDir = Join-Path $ServicesDir "template"
-  Write-Info "Starting template service on http://127.0.0.1:${ServiceTemplatePort}"
-  $process = Start-Process -FilePath $Python -ArgumentList "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", $ServiceTemplatePort -WorkingDirectory $ServiceDir -RedirectStandardOutput $ServiceLog -RedirectStandardError $ServiceLog -PassThru
-  if (-not (Wait-ForUrl "http://127.0.0.1:${ServiceTemplatePort}/health")) {
-    Get-Content $ServiceLog -Tail 40
-    throw "Template service did not become healthy."
+{% for service in extra_services %}
+  ${{ service.slug | replace("-", "") }}Port = $env:{{ service.slug | replace("-", "_") | upper }}_PORT
+  if (-not ${{ service.slug | replace("-", "") }}Port) { ${{ service.slug | replace("-", "") }}Port = "{{ service.port }}" }
+  ${{ service.slug | replace("-", "") }}Log = Join-Path $env:TEMP "{{ project_name }}_{{ service.slug | replace("-", "_") }}.log"
+  ${{ service.slug | replace("-", "") }}Dir = Join-Path $ServicesDir "{{ service.slug }}"
+  Stop-Port ${{ service.slug | replace("-", "") }}Port
+  Write-Info "Starting {{ service.name }} on http://127.0.0.1:${{ service.slug | replace("-", "") }}Port"
+  Start-Process -FilePath $Python -ArgumentList "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", ${{ service.slug | replace("-", "") }}Port -WorkingDirectory ${{ service.slug | replace("-", "") }}Dir -RedirectStandardOutput ${{ service.slug | replace("-", "") }}Log -RedirectStandardError ${{ service.slug | replace("-", "") }}Log -PassThru | Out-Null
+  if (-not (Wait-ForUrl "http://127.0.0.1:${{ service.slug | replace("-", "") }}Port/health")) {
+    Get-Content ${{ service.slug | replace("-", "") }}Log -Tail 40
+    throw "{{ service.name }} did not become healthy."
   }
-  Write-Ok "Template service ready."
-  return $process
+  Write-Ok "{{ service.name }} ready."
+{% endfor %}
 }
 
 function Stop-All {
   Stop-Port $FrontendPort
   Stop-Port $BackendPort
-  Stop-Port $ServiceTemplatePort
+{% for service in extra_services %}
+  ${{ service.slug | replace("-", "") }}Port = $env:{{ service.slug | replace("-", "_") | upper }}_PORT
+  if (-not ${{ service.slug | replace("-", "") }}Port) { ${{ service.slug | replace("-", "") }}Port = "{{ service.port }}" }
+  Stop-Port ${{ service.slug | replace("-", "") }}Port
+{% endfor %}
   Write-Ok "All services stopped."
 }
 
@@ -181,6 +185,11 @@ function Show-Status {
 {% if has_frontend %}
   if (Wait-ForUrl "http://127.0.0.1:${FrontendPort}" 1) { Write-Ok "Frontend running http://localhost:${FrontendPort}" } else { Write-Warn "Frontend not running" }
 {% endif %}
+{% for service in extra_services %}
+  ${{ service.slug | replace("-", "") }}Port = $env:{{ service.slug | replace("-", "_") | upper }}_PORT
+  if (-not ${{ service.slug | replace("-", "") }}Port) { ${{ service.slug | replace("-", "") }}Port = "{{ service.port }}" }
+  if (Wait-ForUrl "http://127.0.0.1:${{ service.slug | replace("-", "") }}Port/health" 1) { Write-Ok "{{ service.name }} running http://127.0.0.1:${{ service.slug | replace("-", "") }}Port" } else { Write-Warn "{{ service.name }} not running" }
+{% endfor %}
 }
 
 switch ($Command) {
@@ -206,7 +215,7 @@ switch ($Command) {
     Start-Frontend | Out-Null
   }
   "logs" {
-    Get-Content $BackendLog, $FrontendLog, $ServiceLog -Tail 80 -Wait -ErrorAction SilentlyContinue
+    Get-Content $BackendLog, $FrontendLog{% for service in extra_services %}, (Join-Path $env:TEMP "{{ project_name }}_{{ service.slug | replace("-", "_") }}.log"){% endfor %} -Tail 80 -Wait -ErrorAction SilentlyContinue
   }
   default {
     Setup-All
@@ -230,4 +239,3 @@ switch ($Command) {
     }
   }
 }
-

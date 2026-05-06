@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_ID="${PROJECT_ID:-}"
+REGION="${REGION:-us-central1}"
+REPOSITORY="${REPOSITORY:-{{ project_name }}-repo}"
+
+if [ -z "$PROJECT_ID" ]; then
+  echo "Define PROJECT_ID antes de desplegar. Ejemplo:"
+  echo "PROJECT_ID=mi-proyecto-gcp REGION=us-central1 ./deploy/gcp/deploy.sh"
+  exit 1
+fi
+
+gcloud config set project "$PROJECT_ID"
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+
+if ! gcloud artifacts repositories describe "$REPOSITORY" --location "$REGION" >/dev/null 2>&1; then
+  gcloud artifacts repositories create "$REPOSITORY" \
+    --repository-format=docker \
+    --location="$REGION" \
+    --description="{{ project_title }} container images"
+fi
+
+gcloud builds submit \
+  --config deploy/gcp/cloudbuild.yaml \
+  --substitutions _REGION="$REGION",_REPOSITORY="$REPOSITORY" \
+  .
+
+echo ""
+echo "Despliegue enviado a Cloud Build."
+echo "Servicios esperados:"
+{% if has_frontend %}echo "- {{ project_name }}-frontend"
+{% endif %}{% if has_backend %}echo "- {{ project_name }}-backend"
+{% endif %}{% for service in extra_services %}echo "- {{ project_name }}-{{ service.slug }}"
+{% endfor %}

@@ -1,31 +1,54 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout.jsx';
+{% if include_ai_ui %}
+import { Agent } from '../pages/Agent.jsx';
+{% endif %}
 import { Dashboard } from '../pages/Dashboard.jsx';
 import { Home } from '../pages/Home.jsx';
+{% if include_login %}
 import { Login } from '../pages/Login.jsx';
+{% endif %}
+import { ModulePage } from '../pages/ModulePage.jsx';
 import { NotFound } from '../pages/NotFound.jsx';
+{% if include_services and extra_services %}
+import { ServicePage } from '../pages/ServicePage.jsx';
+{% endif %}
 import { Settings } from '../pages/Settings.jsx';
+{% if include_login %}
 import { ProtectedRoute } from './ProtectedRoute.jsx';
+{% endif %}
 
 export function AppRouter() {
+  const appLayout = <Layout />;
+
   return (
     <Routes>
       <Route path="/" element={<Home />} />
+{% if include_login %}
       <Route path="/login" element={<Login />} />
       <Route
         path="/app"
         element={
           <ProtectedRoute>
-            <Layout />
+            {appLayout}
           </ProtectedRoute>
         }
       >
+{% else %}
+      <Route path="/app" element={appLayout}>
+{% endif %}
         <Route index element={<Navigate to="/app/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
+        <Route path="module/:moduleId" element={<ModulePage />} />
+{% if include_services and extra_services %}
+        <Route path="service/:serviceSlug" element={<ServicePage />} />
+{% endif %}
+{% if include_ai_ui %}
+        <Route path="agent" element={<Agent />} />
+{% endif %}
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
-

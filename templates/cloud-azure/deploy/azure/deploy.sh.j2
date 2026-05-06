@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+RESOURCE_GROUP="${RESOURCE_GROUP:-{{ project_name }}-rg}"
+CONTAINER_ENV="${CONTAINER_ENV:-{{ project_name }}-env}"
+ACR_NAME="${ACR_NAME:-}"
+LOCATION="${LOCATION:-eastus}"
+VERSION="${VERSION:-latest}"
+
+if [ -z "$ACR_NAME" ]; then
+  echo "Define ACR_NAME antes de desplegar. Debe ser unico globalmente."
+  echo "ACR_NAME={{ project_name | replace('-', '') }}acr RESOURCE_GROUP={{ project_name }}-rg ./deploy/azure/deploy.sh"
+  exit 1
+fi
+
+python deploy.py \
+  --resource-group "$RESOURCE_GROUP" \
+  --environment "$CONTAINER_ENV" \
+  --registry "$ACR_NAME" \
+  --location "$LOCATION" \
+  --version "$VERSION" \
+  "$@"

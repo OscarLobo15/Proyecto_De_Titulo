@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
+VERSION="${VERSION:-latest}"
+
+if [ -z "$AWS_ACCOUNT_ID" ]; then
+  echo "Define AWS_ACCOUNT_ID antes de desplegar. Ejemplo:"
+  echo "AWS_ACCOUNT_ID=123456789012 AWS_REGION=us-east-1 ./deploy/aws/deploy.sh"
+  exit 1
+fi
+
+python deploy.py --account-id "$AWS_ACCOUNT_ID" --region "$AWS_REGION" --version "$VERSION" "$@"

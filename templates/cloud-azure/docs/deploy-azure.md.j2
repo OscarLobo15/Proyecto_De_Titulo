@@ -1,7 +1,21 @@
 # Azure Container Apps
 
+## Servicios generados
+
+{% for target in deploy_targets %}- `{{ target.service_name }}` desde `{{ target.context }}` en puerto `{{ target.port }}`
+{% endfor %}
+
+## Camino rapido
+
+```bash
+ACR_NAME={{ project_name | replace('-', '') }}acr RESOURCE_GROUP={{ project_name }}-rg CONTAINER_ENV={{ project_name }}-env ./deploy/azure/deploy.sh
+```
+
+Esto usa `deploy.py` y `deploy/azure/services.json`.
+
+## Pasos
+
 1. Publica imagenes en Azure Container Registry.
 2. Crea un Container Apps Environment.
-3. Despliega frontend y backend como apps separadas.
+3. Despliega una Container App por contenedor seleccionado.
 4. Configura secretos y variables desde Azure Portal o Azure CLI.
-

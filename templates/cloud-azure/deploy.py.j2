@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""
+Deploy CLI para {{ project_title }} en Azure Container Apps.
+
+Patron similar a Digital Workers: un registro local describe cada contenedor y
+el script construye, publica y despliega solo los servicios seleccionados.
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+ROOT = Path(__file__).parent.resolve()
+
+
+@dataclass(frozen=True)
+class ServiceDef:
+    key: str
+    label: str
+    service_name: str
+    image_name: str
+    port: int
+    context: str
+    dockerfile: str
+    public: bool
+    memory: str = "1Gi"
+    cpu: str = "1"
+    env: dict[str, str] = field(default_factory=dict)
+
+
+SERVICES = [
+{% for target in deploy_targets %}
+    ServiceDef(
+        key="{{ target.key }}",
+        label="{{ target.label }}",
+        service_name="{{ target.service_name }}",
+        image_name="{{ target.image_name }}",
+        port={{ target.port }},
+        context="{{ target.context }}",
+        dockerfile="{{ target.dockerfile }}",
+        public={{ "True" if target.public else "False" }},
+        memory="{{ target.memory }}",
+        cpu="{{ target.cpu }}",
+        env={{ target.env | tojson }},
+    ),
+{% endfor %}
+]
+
+
+def run(command: list[str], dry_run: bool = False) -> None:
+    print("+", " ".join(command))
+    if not dry_run:
+        subprocess.run(command, cwd=ROOT, check=True)
+
+
+def deploy_service(service: ServiceDef, args: argparse.Namespace) -> None:
+    image = f"{args.registry}.azurecr.io/{service.image_name}:{args.version}"
+    run(["docker", "build", "-f", service.dockerfile, "-t", image, service.context], args.dry_run)
+    run(["docker", "push", image], args.dry_run)
+
+    command = [
+        "az",
+        "containerapp",
+        "up",
+        "--name",
+        service.service_name,
+        "--resource-group",
+        args.resource_group,
+        "--environment",
+        args.environment,
+        "--image",
+        image,
+        "--target-port",
+        str(service.port),
+        "--ingress",
+        "external" if service.public else "internal",
+        "--registry-server",
+        f"{args.registry}.azurecr.io",
+        "--cpu",
+        service.cpu,
+        "--memory",
+        service.memory,
+    ]
+    env = [f"{key}={value}" for key, value in service.env.items() if value]
+    if env:
+        command.extend(["--env-vars", *env])
+    run(command, args.dry_run)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Deploy {{ project_title }} to Azure Container Apps")
+    parser.add_argument("--resource-group", required=True)
+    parser.add_argument("--environment", required=True)
+    parser.add_argument("--registry", required=True, help="Nombre del Azure Container Registry sin .azurecr.io")
+    parser.add_argument("--location", default="eastus")
+    parser.add_argument("--version", default="latest")
+    parser.add_argument("--service", choices=[service.key for service in SERVICES])
+    parser.add_argument("--skip-bootstrap", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+
+    if not args.skip_bootstrap:
+        run(["az", "group", "create", "--name", args.resource_group, "--location", args.location], args.dry_run)
+        run(["az", "acr", "create", "--resource-group", args.resource_group, "--name", args.registry, "--sku", "Basic"], args.dry_run)
+        run(["az", "acr", "login", "--name", args.registry], args.dry_run)
+        run(
+            [
+                "az",
+                "containerapp",
+                "env",
+                "create",
+                "--name",
+                args.environment,
+                "--resource-group",
+                args.resource_group,
+                "--location",
+                args.location,
+            ],
+            args.dry_run,
+        )
+
+    selected = [service for service in SERVICES if args.service in (None, service.key)]
+    for service in selected:
+        deploy_service(service, args)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

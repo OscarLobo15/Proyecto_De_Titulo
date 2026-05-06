@@ -1,4 +1,4 @@
-import { ArrowRight, Boxes, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Bot, Boxes, Cpu, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/Button.jsx';
 
@@ -10,30 +10,46 @@ export function Home() {
         <h1>{{ project_title }}</h1>
         <p>{{ description }}</p>
         <div className="home-actions">
-          <Link to="/login">
+          <Link to="{% if include_login %}/login{% else %}/app/dashboard{% endif %}">
             <Button>
-              Ingresar
-              <ArrowRight size={18} />
+              Abrir prototipo
+              <ArrowRight size={16} />
             </Button>
           </Link>
+{% if has_backend %}
           <a className="text-link" href="http://localhost:{{ backend_port }}/docs">
             Ver API
           </a>
+{% endif %}
         </div>
       </section>
+
       <section className="capability-grid" aria-label="Capacidades">
         <article>
-          <Boxes size={22} />
+          <Boxes size={20} className="capability-icon" />
           <h2>Arquitectura modular</h2>
-          <p>Frontend, backend, servicios y configuracion separados desde el primer commit.</p>
+          <p>Frontend, backend y servicios separados desde el primer commit.</p>
         </article>
         <article>
-          <ShieldCheck size={22} />
+          <ShieldCheck size={20} className="capability-icon" />
           <h2>Rutas protegidas</h2>
-          <p>Base lista para autenticacion y crecimiento de permisos por rol.</p>
+          <p>Base lista para autenticación y control de acceso por rol.</p>
         </article>
+{% if include_ai_ui %}
+        <article>
+          <Bot size={20} className="capability-icon" />
+          <h2>Agente IA</h2>
+          <p>Interfaz de chat conectada a Gemini vía LangGraph.</p>
+        </article>
+{% endif %}
+{% if include_services %}
+        <article>
+          <Cpu size={20} className="capability-icon" />
+          <h2>Microservicios</h2>
+          <p>{{ service_count }} servicio{{ 's' if service_count > 1 else '' }} independiente{{ 's' if service_count > 1 else '' }} listos para extender.</p>
+        </article>
+{% endif %}
       </section>
     </main>
   );
 }
-

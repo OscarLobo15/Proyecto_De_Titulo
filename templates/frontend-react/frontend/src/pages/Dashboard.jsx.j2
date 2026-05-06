@@ -1,41 +1,59 @@
-import { Activity, Database, Server } from 'lucide-react';
+import { Activity, Database, Layers, Server } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Card } from '../components/ui/Card.jsx';
+{% if has_backend %}
 import { getHealth } from '../services/api.js';
+{% endif %}
 
 export function Dashboard() {
   const [apiStatus, setApiStatus] = useState('checking');
 
   useEffect(() => {
+{% if has_backend %}
     getHealth()
       .then((response) => setApiStatus(response.status))
       .catch(() => setApiStatus('offline'));
+{% else %}
+    setApiStatus('frontend-only');
+{% endif %}
   }, []);
 
   return (
     <div className="page-stack">
-      <div>
-        <span className="eyebrow">Fullstack foundation</span>
-        <h2>Dashboard</h2>
+      <div className="page-header">
+        <span className="eyebrow">{{ project_profile }}</span>
+        <h2>Principal</h2>
       </div>
       <div className="metrics-grid">
-        <Card>
-          <Activity size={22} />
-          <span>API</span>
-          <strong>{apiStatus}</strong>
-        </Card>
-        <Card>
-          <Server size={22} />
-          <span>Backend</span>
-          <strong>{{ project.backend }}</strong>
-        </Card>
-        <Card>
-          <Database size={22} />
-          <span>Datos</span>
-          <strong>{{ project.database }}</strong>
-        </Card>
+        <div className="card">
+          <Activity size={20} className="card-icon" />
+          <span className="card-label">Estado API</span>
+          <strong className="card-value">{apiStatus}</strong>
+        </div>
+{% if has_backend %}
+        <div className="card">
+          <Server size={20} className="card-icon" />
+          <span className="card-label">Backend</span>
+          <strong className="card-value">{{ project.backend }}</strong>
+        </div>
+        <div className="card">
+          <Database size={20} className="card-icon" />
+          <span className="card-label">Base de datos</span>
+          <strong className="card-value">{{ project.database }}</strong>
+        </div>
+{% endif %}
+        <div className="card">
+          <Layers size={20} className="card-icon" />
+          <span className="card-label">Módulos</span>
+          <strong className="card-value">3</strong>
+        </div>
+{% if include_services %}
+        <div className="card">
+          <Server size={20} className="card-icon" />
+          <span className="card-label">Servicios</span>
+          <strong className="card-value">{{ service_count }}</strong>
+        </div>
+{% endif %}
       </div>
     </div>
   );
 }
-

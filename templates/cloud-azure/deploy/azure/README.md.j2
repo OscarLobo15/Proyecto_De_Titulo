@@ -1,0 +1,16 @@
+# Deploy Azure
+
+Archivos generados para publicar los contenedores seleccionados en Azure Container Registry y desplegarlos en Azure Container Apps.
+
+## Ejecutar
+
+```bash
+ACR_NAME={{ project_name | replace('-', '') }}acr RESOURCE_GROUP={{ project_name }}-rg CONTAINER_ENV={{ project_name }}-env ./deploy/azure/deploy.sh
+```
+
+## Contenedores incluidos
+
+{% for target in deploy_targets %}- `{{ target.service_name }}` desde `{{ target.context }}` en puerto `{{ target.port }}`
+{% endfor %}
+
+Configura secretos reales en Container Apps Secrets y referencia esos secretos desde las variables de entorno de cada app.

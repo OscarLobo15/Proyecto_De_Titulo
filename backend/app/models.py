@@ -6,12 +6,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 FrontendOption = Literal["react"]
 BackendOption = Literal["fastapi"]
-AuthOption = Literal["firebase", "none"]
-DatabaseOption = Literal["postgresql", "firestore", "none"]
+AuthOption = Literal["firebase", "supabase", "none"]
+DatabaseOption = Literal["postgresql", "firestore", "supabase", "none"]
 CloudOption = Literal["gcp", "aws", "azure", "local"]
 ProjectType = Literal["web", "api", "fullstack"]
 ProjectProfile = Literal["standard", "ai", "microservices", "api-only"]
-ContainerOption = Literal["frontend", "backend", "database", "services"]
+ContainerOption = Literal["frontend", "backend", "services"]
 TargetOS = Literal["mac", "windows", "both"]
 
 
@@ -25,11 +25,12 @@ class ProjectConfig(BaseModel):
     auth: AuthOption = "firebase"
     database: DatabaseOption = "postgresql"
     cloud: CloudOption = "local"
-    containers: list[ContainerOption] = Field(default_factory=lambda: ["frontend", "backend", "database"])
+    containers: list[ContainerOption] = Field(default_factory=lambda: ["frontend", "backend"])
     include_docker: bool = True
     include_dev_script: bool = True
     include_services: bool = False
     include_langgraph: bool = False
+    service_count: int = Field(default=0, ge=0, le=5)
     target_os: TargetOS = "mac"
     pages: list[str] = Field(default_factory=lambda: ["home", "login", "dashboard", "settings", "not-found"])
 
@@ -54,12 +55,41 @@ class ProjectConfig(BaseModel):
             if "frontend" not in self.containers:
                 self.containers = ["frontend"]
             self.include_services = False
+            self.service_count = 0
+            self.include_langgraph = False
 
         if self.project_type == "api":
-            self.auth = "none"
-            self.containers = [item for item in self.containers if item in ["backend", "database", "services"]]
+            self.containers = [item for item in self.containers if item in ["backend", "services"]]
             if "backend" not in self.containers:
                 self.containers.insert(0, "backend")
+            self.pages = []
+
+        if self.project_type == "fullstack":
+            if "frontend" not in self.containers:
+                self.containers.insert(0, "frontend")
+            if "backend" not in self.containers:
+                self.containers.append("backend")
+
+        if self.project_profile == "ai" and self.project_type != "web":
+            self.include_langgraph = True
+
+        if self.project_profile == "microservices" and self.project_type != "web":
+            self.include_services = True
+            self.service_count = max(self.service_count, 2)
+            if "services" not in self.containers:
+                self.containers.append("services")
+        elif self.service_count > 0 and self.project_type != "web":
+            self.include_services = True
+            if "services" not in self.containers:
+                self.containers.append("services")
+        else:
+            self.include_services = False
+            self.service_count = 0
+
+        if self.auth == "none":
+            self.pages = [page for page in self.pages if page != "login"]
+        elif self.project_type != "api" and "login" not in self.pages:
+            self.pages.append("login")
 
         return self
 

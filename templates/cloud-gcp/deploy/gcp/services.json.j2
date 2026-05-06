@@ -1,0 +1,21 @@
+{
+  "cloud": "gcp",
+  "project": "{{ project_name }}",
+  "runtime": "cloud-run",
+  "services": [
+{% for target in deploy_targets %}
+    {
+      "key": "{{ target.key }}",
+      "serviceName": "{{ target.service_name }}",
+      "imageName": "{{ target.image_name }}",
+      "context": "{{ target.context }}",
+      "dockerfile": "{{ target.dockerfile }}",
+      "port": {{ target.port }},
+      "public": {{ "true" if target.public else "false" }},
+      "memory": "{{ target.memory }}",
+      "cpu": "{{ target.cpu }}",
+      "env": {{ target.env | tojson }}
+    }{{ "," if not loop.last else "" }}
+{% endfor %}
+  ]
+}

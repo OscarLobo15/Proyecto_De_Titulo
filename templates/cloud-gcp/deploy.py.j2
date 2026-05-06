@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""
+Deploy CLI para {{ project_title }} en GCP Cloud Run.
+
+Patron inspirado en Digital Workers: un registro central de servicios define
+que contenedores se construyen, publican y despliegan. El registro se genera
+segun las selecciones hechas en el generador.
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+ROOT = Path(__file__).parent.resolve()
+
+
+@dataclass(frozen=True)
+class ServiceDef:
+    key: str
+    label: str
+    service_name: str
+    image_name: str
+    port: int
+    context: str
+    dockerfile: str
+    public: bool
+    memory: str = "1Gi"
+    cpu: str = "1"
+    env: dict[str, str] = field(default_factory=dict)
+
+
+SERVICES = [
+{% for target in deploy_targets %}
+    ServiceDef(
+        key="{{ target.key }}",
+        label="{{ target.label }}",
+        service_name="{{ target.service_name }}",
+        image_name="{{ target.image_name }}",
+        port={{ target.port }},
+        context="{{ target.context }}",
+        dockerfile="{{ target.dockerfile }}",
+        public={{ "True" if target.public else "False" }},
+        memory="{{ target.memory }}",
+        cpu="{{ target.cpu }}",
+        env={{ target.env | tojson }},
+    ),
+{% endfor %}
+]
+
+
+def run(command: list[str], dry_run: bool = False) -> None:
+    print("+", " ".join(command))
+    if not dry_run:
+        subprocess.run(command, cwd=ROOT, check=True)
+
+
+def deploy_service(service: ServiceDef, args: argparse.Namespace) -> None:
+    image = f"{args.region}-docker.pkg.dev/{args.project_id}/{args.repository}/{service.image_name}:{args.version}"
+    run(["docker", "build", "-f", service.dockerfile, "-t", image, service.context], args.dry_run)
+    run(["docker", "push", image], args.dry_run)
+
+    command = [
+        "gcloud",
+        "run",
+        "deploy",
+        service.service_name,
+        f"--image={image}",
+        f"--region={args.region}",
+        "--platform=managed",
+        f"--port={service.port}",
+        f"--memory={service.memory}",
+        f"--cpu={service.cpu}",
+    ]
+    command.append("--allow-unauthenticated" if service.public else "--no-allow-unauthenticated")
+
+    env = {key: value for key, value in service.env.items() if value}
+    if env:
+        command.append("--set-env-vars=" + ",".join(f"{key}={value}" for key, value in env.items()))
+
+    run(command, args.dry_run)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Deploy {{ project_title }} to GCP Cloud Run")
+    parser.add_argument("--project-id", required=True)
+    parser.add_argument("--region", default="us-central1")
+    parser.add_argument("--repository", default="{{ project_name }}-repo")
+    parser.add_argument("--version", default="latest")
+    parser.add_argument("--service", choices=[service.key for service in SERVICES], help="Despliega solo un servicio")
+    parser.add_argument("--skip-bootstrap", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+
+    if not args.skip_bootstrap:
+        run(["gcloud", "config", "set", "project", args.project_id], args.dry_run)
+        run(["gcloud", "services", "enable", "run.googleapis.com", "artifactregistry.googleapis.com"], args.dry_run)
+        try:
+            run(
+                ["gcloud", "artifacts", "repositories", "describe", args.repository, f"--location={args.region}"],
+                args.dry_run,
+            )
+        except subprocess.CalledProcessError:
+            run(
+                [
+                    "gcloud",
+                    "artifacts",
+                    "repositories",
+                    "create",
+                    args.repository,
+                    "--repository-format=docker",
+                    f"--location={args.region}",
+                    "--quiet",
+                ],
+                args.dry_run,
+            )
+
+    selected = [service for service in SERVICES if args.service in (None, service.key)]
+    for service in selected:
+        deploy_service(service, args)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

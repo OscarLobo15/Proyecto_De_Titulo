@@ -138,24 +138,8 @@ def _decode_config(token: str) -> ProjectConfig:
 
 
 def _ensure_zip(config: ProjectConfig) -> Path:
-    """Return existing zip or generate a fresh one."""
-    zip_path = settings.generated_dir / f"{config.project_name}.zip"
-    if not zip_path.exists():
-        try:
-            zip_path = ProjectGenerator(settings.templates_dir, settings.generated_dir).generate(config)
-        except (FileNotFoundError, ValueError) as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return zip_path
-
-    """Windows PowerShell one-liner: works from any directory on the user's machine."""
-    url = f"{settings.public_url}/download/{config.project_name}.zip"
-    name = config.project_name
-    setup = r".\dev.ps1 setup" if config.include_dev_script else "Write-Host 'Listo'"
-    return (
-        f'$tmp="$env:TEMP\\{name}.zip"; '
-        f'Invoke-WebRequest "{url}" -OutFile $tmp; '
-        f'Expand-Archive $tmp -DestinationPath . -Force; '
-        f'Remove-Item $tmp; '
-        f'Set-Location {name}; '
-        f'{setup}'
-    )
+    """Generate a fresh zip so install links never serve stale templates."""
+    try:
+        return ProjectGenerator(settings.templates_dir, settings.generated_dir).generate(config)
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""
+Deploy CLI para {{ project_title }} en AWS.
+
+Genera y publica imagenes en ECR. Para App Runner, crea el servicio cuando se
+entrega un role ARN con permisos de acceso a ECR; si no, deja las imagenes
+listas para conectarlas desde App Runner/ECS.
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+ROOT = Path(__file__).parent.resolve()
+
+
+@dataclass(frozen=True)
+class ServiceDef:
+    key: str
+    label: str
+    service_name: str
+    image_name: str
+    port: int
+    context: str
+    dockerfile: str
+    public: bool
+    env: dict[str, str] = field(default_factory=dict)
+
+
+SERVICES = [
+{% for target in deploy_targets %}
+    ServiceDef(
+        key="{{ target.key }}",
+        label="{{ target.label }}",
+        service_name="{{ target.service_name }}",
+        image_name="{{ target.image_name }}",
+        port={{ target.port }},
+        context="{{ target.context }}",
+        dockerfile="{{ target.dockerfile }}",
+        public={{ "True" if target.public else "False" }},
+        env={{ target.env | tojson }},
+    ),
+{% endfor %}
+]
+
+
+def run(command: list[str], dry_run: bool = False, capture: bool = False) -> str:
+    print("+", " ".join(command))
+    if dry_run:
+        return ""
+    result = subprocess.run(command, cwd=ROOT, check=True, text=True, capture_output=capture)
+    return result.stdout.strip() if capture else ""
+
+
+def ensure_repo(account_id: str, region: str, repo: str, dry_run: bool) -> str:
+    try:
+        run(["aws", "ecr", "describe-repositories", "--repository-names", repo, "--region", region], dry_run)
+    except subprocess.CalledProcessError:
+        run(["aws", "ecr", "create-repository", "--repository-name", repo, "--region", region], dry_run)
+    return f"{account_id}.dkr.ecr.{region}.amazonaws.com/{repo}"
+
+
+def docker_login(account_id: str, region: str, dry_run: bool) -> None:
+    registry = f"{account_id}.dkr.ecr.{region}.amazonaws.com"
+    if dry_run:
+        print("+ aws ecr get-login-password ... | docker login --username AWS --password-stdin", registry)
+        return
+    password = subprocess.run(
+        ["aws", "ecr", "get-login-password", "--region", region],
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout
+    subprocess.run(
+        ["docker", "login", "--username", "AWS", "--password-stdin", registry],
+        input=password,
+        text=True,
+        check=True,
+    )
+
+
+def deploy_service(service: ServiceDef, args: argparse.Namespace) -> None:
+    repo_uri = ensure_repo(args.account_id, args.region, service.image_name, args.dry_run)
+    image = f"{repo_uri}:{args.version}"
+    run(["docker", "build", "-f", service.dockerfile, "-t", image, service.context], args.dry_run)
+    run(["docker", "push", image], args.dry_run)
+
+    if not args.apprunner_role_arn:
+        print(f"Imagen lista para {service.label}: {image}")
+        return
+
+    env_items = []
+    for key, value in service.env.items():
+        if value:
+            env_items.extend(["Name=" + key + ",Value=" + value])
+
+    command = [
+        "aws",
+        "apprunner",
+        "create-service",
+        "--region",
+        args.region,
+        "--service-name",
+        service.service_name,
+        "--source-configuration",
+        (
+            "AuthenticationConfiguration={AccessRoleArn="
+            + args.apprunner_role_arn
+            + "},ImageRepository={ImageIdentifier="
+            + image
+            + ",ImageRepositoryType=ECR,ImageConfiguration={Port="
+            + str(service.port)
+            + "}}"
+        ),
+    ]
+    run(command, args.dry_run)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Deploy {{ project_title }} to AWS ECR/App Runner")
+    parser.add_argument("--account-id", required=True)
+    parser.add_argument("--region", default="us-east-1")
+    parser.add_argument("--version", default="latest")
+    parser.add_argument("--service", choices=[service.key for service in SERVICES])
+    parser.add_argument("--apprunner-role-arn", help="Role ARN para que App Runner lea ECR")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+
+    docker_login(args.account_id, args.region, args.dry_run)
+
+    selected = [service for service in SERVICES if args.service in (None, service.key)]
+    for service in selected:
+        deploy_service(service, args)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

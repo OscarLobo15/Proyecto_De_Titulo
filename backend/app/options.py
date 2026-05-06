@@ -5,20 +5,38 @@ OPTIONS = {
         {"value": "fullstack", "label": "Fullstack"},
     ],
     "projectProfiles": [
-        {"value": "standard", "label": "Esqueleto web estandar"},
-        {"value": "ai", "label": "Aplicacion con IA"},
-        {"value": "microservices", "label": "Aplicacion con microservicios"},
-        {"value": "api-only", "label": "API / agente backend"},
+        {
+            "value": "standard",
+            "label": "Producto modular",
+            "description": "Base limpia con Home, panel principal y cinco modulos vacios para prototipos IBM.",
+        },
+        {
+            "value": "ai",
+            "label": "Producto con IA",
+            "description": "Activa LangGraph en backend y agrega modulo Agente con chat e historial lateral.",
+        },
+        {
+            "value": "microservices",
+            "label": "Microservicios",
+            "description": "Deriva services/ y contenedores adicionales; recomendado para integraciones separadas.",
+        },
+        {
+            "value": "api-only",
+            "label": "API / agente backend",
+            "description": "Prioriza FastAPI, Swagger, salud, variables y conectores sin UI.",
+        },
     ],
     "frontend": [{"value": "react", "label": "React + Vite"}],
-    "backend": [{"value": "fastapi", "label": "FastAPI"}],
+    "backend": [{"value": "fastapi", "label": "FastAPI + Uvicorn"}],
     "auth": [
         {"value": "firebase", "label": "Firebase Auth"},
+        {"value": "supabase", "label": "Supabase Auth"},
         {"value": "none", "label": "Sin autenticacion"},
     ],
     "database": [
         {"value": "postgresql", "label": "PostgreSQL"},
         {"value": "firestore", "label": "Firestore"},
+        {"value": "supabase", "label": "Supabase"},
         {"value": "none", "label": "Sin base de datos"},
     ],
     "cloud": [
@@ -30,8 +48,15 @@ OPTIONS = {
     "containers": [
         {"value": "frontend", "label": "Frontend"},
         {"value": "backend", "label": "Backend"},
-        {"value": "database", "label": "Base de datos"},
         {"value": "services", "label": "Servicios adicionales"},
+    ],
+    "serviceCounts": [
+        {"value": 0, "label": "Sin servicios extra"},
+        {"value": 1, "label": "1 servicio"},
+        {"value": 2, "label": "2 servicios"},
+        {"value": 3, "label": "3 servicios"},
+        {"value": 4, "label": "4 servicios"},
+        {"value": 5, "label": "5 servicios"},
     ],
     "targetOs": [
         {"value": "mac", "label": "macOS / Linux"},

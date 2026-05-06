@@ -1,0 +1,15 @@
+import { useParams } from 'react-router-dom';
+
+export function ModulePage() {
+  const { moduleId } = useParams();
+
+  return (
+    <div className="module-page">
+      <div className="page-header">
+        <span className="eyebrow">Módulo base</span>
+        <h2>Módulo {moduleId}</h2>
+      </div>
+      <section className="blank-module" aria-label={`Módulo ${moduleId} sin contenido`} />
+    </div>
+  );
+}

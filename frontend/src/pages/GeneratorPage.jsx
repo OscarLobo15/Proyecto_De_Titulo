@@ -16,11 +16,12 @@ const initialConfig = {
   auth: 'firebase',
   database: 'postgresql',
   cloud: 'local',
-  containers: ['frontend', 'backend', 'database'],
+  containers: ['frontend', 'backend'],
   include_docker: true,
   include_dev_script: true,
   include_services: false,
   include_langgraph: false,
+  service_count: 0,
   target_os: 'mac',
   pages: ['home', 'login', 'dashboard', 'settings', 'not-found'],
 };
@@ -28,25 +29,56 @@ const initialConfig = {
 const steps = ['Proyecto', 'Stack', 'Servicios', 'Entrega'];
 
 function normalizeConfig(nextConfig) {
-  if (nextConfig.project_type === 'web') {
-    return {
+  let normalized = { ...nextConfig };
+
+  if (normalized.project_profile === 'ai' && normalized.project_type !== 'web') {
+    normalized.include_langgraph = true;
+  }
+
+  if (normalized.project_type === 'web') {
+    normalized = {
       ...nextConfig,
       database: 'none',
-      containers: nextConfig.containers.filter((item) => item === 'frontend').length ? ['frontend'] : ['frontend'],
+      containers: ['frontend'],
       include_services: false,
+      include_langgraph: false,
+      service_count: 0,
     };
   }
 
-  if (nextConfig.project_type === 'api') {
-    const apiContainers = nextConfig.containers.filter((item) => ['backend', 'database', 'services'].includes(item));
-    return {
-      ...nextConfig,
-      auth: 'none',
+  if (normalized.project_type === 'api') {
+    const apiContainers = normalized.containers.filter((item) => ['backend', 'services'].includes(item));
+    normalized = {
+      ...normalized,
       containers: apiContainers.includes('backend') ? apiContainers : ['backend', ...apiContainers],
+      pages: [],
     };
   }
 
-  return nextConfig;
+  if (normalized.project_type === 'fullstack') {
+    normalized.containers = Array.from(new Set(['frontend', 'backend', ...normalized.containers.filter((item) => item !== 'services')]));
+  }
+
+  if (normalized.project_profile === 'microservices' && normalized.project_type !== 'web') {
+    normalized.include_services = true;
+    normalized.service_count = Math.max(normalized.service_count, 2);
+    normalized.containers = Array.from(new Set([...normalized.containers, 'services']));
+  } else if (normalized.service_count > 0 && normalized.project_type !== 'web') {
+    normalized.include_services = true;
+    normalized.containers = Array.from(new Set([...normalized.containers, 'services']));
+  } else {
+    normalized.include_services = false;
+    normalized.service_count = 0;
+    normalized.containers = normalized.containers.filter((item) => item !== 'services');
+  }
+
+  if (normalized.auth === 'none') {
+    normalized.pages = normalized.pages.filter((page) => page !== 'login');
+  } else if (normalized.project_type !== 'api' && !normalized.pages.includes('login')) {
+    normalized.pages = [...normalized.pages, 'login'];
+  }
+
+  return normalized;
 }
 
 export function GeneratorPage() {
@@ -150,6 +182,7 @@ export function GeneratorPage() {
                   {options?.projectProfiles?.map((option) => (
                     <OptionCard
                       key={option.value}
+                      description={option.description}
                       label={option.label}
                       selected={config.project_profile === option.value}
                       onClick={() => updateField('project_profile', option.value)}
@@ -187,15 +220,12 @@ export function GeneratorPage() {
               {config.project_type !== 'web' && (
                 <SelectGroup label="Base de datos" options={options?.database} value={config.database} onSelect={(value) => updateField('database', value)} />
               )}
-              {config.project_type !== 'web' && config.project_profile === 'ai' && (
-                <label className="toggle-row span-2">
-                  <input
-                    checked={config.include_langgraph}
-                    type="checkbox"
-                    onChange={(event) => updateField('include_langgraph', event.target.checked)}
-                  />
-                  <span>Incluir LangGraph para el backend de IA</span>
-                </label>
+              {config.project_profile === 'ai' && (
+                <div className="info-row span-2">
+                  {config.project_type === 'web'
+                    ? 'Se agregara un modulo Agente frontend con chat e historial, sin depender de backend.'
+                    : 'LangGraph se incluye automaticamente y el prototipo agrega un modulo Agente con chat e historial.'}
+                </div>
               )}
             </div>
           )}
@@ -203,23 +233,32 @@ export function GeneratorPage() {
           {step === 2 && (
             <div className="form-grid">
               <SelectGroup label="Cloud objetivo" options={options?.cloud} value={config.cloud} onSelect={(value) => updateField('cloud', value)} />
-              <div className="option-group">
-                <span>Contenedores</span>
+              {config.project_type !== 'web' && (
+              <div className="option-group span-2">
+                <span>Servicios adicionales</span>
                 <div className="option-grid">
-                  {options?.containers
-                    ?.filter((option) => {
-                      if (config.project_type === 'web') return option.value === 'frontend';
-                      if (config.project_type === 'api') return ['backend', 'database', 'services'].includes(option.value);
-                      return true;
-                    })
-                    .map((option) => (
+                  {options?.serviceCounts?.map((option) => (
                     <OptionCard
                       key={option.value}
                       label={option.label}
-                      selected={config.containers.includes(option.value)}
-                      onClick={() => toggleArrayValue('containers', option.value)}
+                      selected={config.service_count === option.value}
+                      onClick={() => updateField('service_count', option.value)}
                     />
                   ))}
+                </div>
+                <p className="field-help">
+                  Frontend, backend y servicios se despliegan en contenedores. La base de datos queda como servicio administrado externo.
+                </p>
+              </div>
+              )}
+              <div className="option-group span-2">
+                <span>Contenedores generados</span>
+                <div className="option-grid">
+                  {options?.containers
+                    ?.filter((option) => config.containers.includes(option.value))
+                    .map((option) => (
+                      <OptionCard key={option.value} label={option.label} selected onClick={() => {}} />
+                    ))}
                 </div>
               </div>
             </div>
@@ -256,16 +295,6 @@ export function GeneratorPage() {
                   ))}
                 </div>
               </div>
-              {config.project_type !== 'web' && (
-                <label className="toggle-row">
-                  <input
-                    checked={config.include_services}
-                    type="checkbox"
-                    onChange={(event) => updateField('include_services', event.target.checked)}
-                  />
-                  <span>Incluir carpeta services con microservicio base</span>
-                </label>
-              )}
               <button className="generate-button" disabled={status === 'loading'} type="button" onClick={handleGenerate}>
                 {status === 'loading' ? <Loader2 className="spin" size={18} /> : <PackageCheck size={18} />}
                 Generar proyecto
@@ -326,7 +355,13 @@ function SelectGroup({ label, options = [], value, onSelect }) {
       <span>{label}</span>
       <div className="option-grid">
         {options.map((option) => (
-          <OptionCard key={option.value} label={option.label} selected={value === option.value} onClick={() => onSelect(option.value)} />
+          <OptionCard
+            key={option.value}
+            description={option.description}
+            label={option.label}
+            selected={value === option.value}
+            onClick={() => onSelect(option.value)}
+          />
         ))}
       </div>
     </div>

@@ -1,0 +1,19 @@
+{
+  "cloud": "aws",
+  "project": "{{ project_name }}",
+  "runtime": "ecr-apprunner-or-ecs",
+  "services": [
+{% for target in deploy_targets %}
+    {
+      "key": "{{ target.key }}",
+      "serviceName": "{{ target.service_name }}",
+      "imageName": "{{ target.image_name }}",
+      "context": "{{ target.context }}",
+      "dockerfile": "{{ target.dockerfile }}",
+      "port": {{ target.port }},
+      "public": {{ "true" if target.public else "false" }},
+      "env": {{ target.env | tojson }}
+    }{{ "," if not loop.last else "" }}
+{% endfor %}
+  ]
+}
