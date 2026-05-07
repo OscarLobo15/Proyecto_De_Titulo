@@ -1,5 +1,5 @@
 import re
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -100,4 +100,4 @@ class GenerateResponse(BaseModel):
     file_name: str
     config_token: str
     install_command: str
-    install_command_windows: str | None = None
+    install_command_windows: Optional[str] = None

@@ -14,6 +14,7 @@ BACKEND_PORT="${BACKEND_PORT:-8000}"
 FRONTEND_HOST="${FRONTEND_HOST:-0.0.0.0}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 OPEN_BROWSER="${OPEN_BROWSER:-true}"
+BACKEND_RELOAD="${BACKEND_RELOAD:-true}"
 
 BACKEND_LOG="${BACKEND_LOG:-/tmp/reference_generator_backend.log}"
 FRONTEND_LOG="${FRONTEND_LOG:-/tmp/reference_generator_frontend.log}"
@@ -65,8 +66,8 @@ foreground() {
 
   print_line "${CYAN}Starting backend in foreground mode...${NC}"
   cd "$BACKEND_DIR"
-  "$VENV_DIR/bin/python" -m uvicorn app.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" --reload --reload-dir app >"$BACKEND_LOG" 2>&1 &
-  local backend_pid=$!
+  local backend_pid
+  start_backend_with_optional_reload "foreground" backend_pid
 
   if ! wait_for_url "http://${BACKEND_HOST}:${BACKEND_PORT}/health" 30; then
     print_line "${RED}Backend did not become healthy. Last log lines:${NC}"
@@ -154,6 +155,48 @@ wait_for_url() {
   return 1
 }
 
+start_backend_process() {
+  local mode="$1"
+
+  if [ "$mode" = "reload" ]; then
+    "$VENV_DIR/bin/python" -m uvicorn app.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" --reload --reload-dir app
+  else
+    "$VENV_DIR/bin/python" -m uvicorn app.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT"
+  fi
+}
+
+backend_failed_due_to_reload_permissions() {
+  grep -q "Operation not permitted" "$BACKEND_LOG" 2>/dev/null
+}
+
+start_backend_with_optional_reload() {
+  local _run_mode="$1"
+  local pid_var_name="$2"
+  local backend_pid
+  local initial_mode="plain"
+
+  if [ "$BACKEND_RELOAD" = "true" ]; then
+    initial_mode="reload"
+  fi
+
+  > "$BACKEND_LOG"
+  start_backend_process "$initial_mode" >"$BACKEND_LOG" 2>&1 &
+
+  backend_pid=$!
+
+  if ! wait_for_url "http://${BACKEND_HOST}:${BACKEND_PORT}/health" 8 && [ "$initial_mode" = "reload" ] && backend_failed_due_to_reload_permissions; then
+    print_line "${YELLOW}Backend reload is not permitted in this environment. Retrying without reload...${NC}"
+    kill "$backend_pid" >/dev/null 2>&1 || true
+    wait "$backend_pid" >/dev/null 2>&1 || true
+    > "$BACKEND_LOG"
+    start_backend_process "plain" >"$BACKEND_LOG" 2>&1 &
+
+    backend_pid=$!
+  fi
+
+  printf -v "$pid_var_name" '%s' "$backend_pid"
+}
+
 ensure_backend_deps() {
   if [ ! -d "$VENV_DIR" ]; then
     print_line "${YELLOW}Python venv not found. Creating .venv...${NC}"
@@ -199,10 +242,9 @@ start_backend() {
   stop_port "backend" "$BACKEND_PORT"
 
   print_line "${CYAN}Starting backend on http://${BACKEND_HOST}:${BACKEND_PORT}${NC}"
-  > "$BACKEND_LOG"
   cd "$BACKEND_DIR"
-  nohup "$VENV_DIR/bin/python" -m uvicorn app.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" --reload --reload-dir app >"$BACKEND_LOG" 2>&1 </dev/null &
-  local pid=$!
+  local pid
+  start_backend_with_optional_reload "background" pid
   disown "$pid" 2>/dev/null || true
   write_pid_file "$BACKEND_PID_FILE" "$pid"
 
