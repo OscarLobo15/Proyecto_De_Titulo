@@ -1,8 +1,8 @@
-import { Bot, Cpu, Gauge, Layers, Settings } from 'lucide-react';
+import { Bot, Cpu, Layers, PanelLeft, Settings } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 export function Sidebar() {
-  const modules = Array.from({ length: 3 }, (_, index) => index + 1);
+  const modules = {{ modules | tojson }};
 
   return (
     <aside className="sidebar">
@@ -12,17 +12,17 @@ export function Sidebar() {
           <span className="brand-name">{{ project_title }}</span>
         </div>
         <nav>
-          <NavLink to="/app/dashboard">
-            <Gauge size={16} />
-            Principal
+          <NavLink to="/app/workspace">
+            <PanelLeft size={16} />
+            Inicio
           </NavLink>
 
           <div className="nav-section">
             <div className="nav-label">Módulos</div>
-            {modules.map((moduleId) => (
-              <NavLink key={moduleId} to={`/app/module/${moduleId}`}>
+            {modules.map((module) => (
+              <NavLink key={module.slug} to={`/app/module/${module.slug}`}>
                 <Layers size={16} />
-                Módulo {moduleId}
+                {module.label}
               </NavLink>
             ))}
           </div>

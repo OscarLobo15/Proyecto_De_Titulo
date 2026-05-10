@@ -19,7 +19,7 @@ export function Login() {
 
     try {
       await login(email, password);
-      navigate('/app/dashboard');
+      navigate('{{ primary_route }}');
     } catch (loginError) {
       setError(loginError.message || 'No fue posible iniciar sesion.');
     } finally {
@@ -46,4 +46,3 @@ export function Login() {
     </main>
   );
 }
-

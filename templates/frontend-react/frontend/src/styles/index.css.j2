@@ -417,7 +417,14 @@ button, input {
   margin: 6px 0 0;
 }
 
-/* ── Page: Dashboard ─────────────────── */
+.page-header p {
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 10px 0 0;
+  max-width: 760px;
+}
+
+/* ── Page: Workspace ─────────────────── */
 
 .metrics-grid {
   background: var(--line);
@@ -452,6 +459,42 @@ button, input {
 .card-value {
   font-size: 1.5rem;
   font-weight: 300;
+}
+
+.module-grid {
+  background: var(--line);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.module-card {
+  background: var(--surface);
+  display: grid;
+  gap: 8px;
+  min-height: 180px;
+  padding: 24px;
+}
+
+.module-card span {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.module-card h3 {
+  font-size: 1.125rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+.module-card p {
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 0;
 }
 
 /* ── Page: Settings ──────────────────── */
@@ -501,10 +544,33 @@ button, input {
   gap: 24px;
 }
 
-.blank-module {
+.module-surface {
   background: var(--surface);
-  border: 1px dashed var(--line-strong);
+  border: 1px solid var(--line);
+  display: grid;
   min-height: 50vh;
+  place-items: center;
+}
+
+.module-empty {
+  display: grid;
+  gap: 8px;
+  max-width: 420px;
+  padding: 32px;
+  text-align: center;
+}
+
+.module-empty span {
+  color: var(--primary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.module-empty p {
+  color: var(--muted);
+  margin: 0;
 }
 
 /* ── Page: Service ───────────────────── */

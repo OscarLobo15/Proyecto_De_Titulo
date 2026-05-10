@@ -1,15 +1,22 @@
 import { useParams } from 'react-router-dom';
 
 export function ModulePage() {
-  const { moduleId } = useParams();
+  const { moduleSlug } = useParams();
+  const modules = {{ modules | tojson }};
+  const module = modules.find((item) => item.slug === moduleSlug) || { label: 'Módulo', slug: moduleSlug };
 
   return (
     <div className="module-page">
       <div className="page-header">
-        <span className="eyebrow">Módulo base</span>
-        <h2>Módulo {moduleId}</h2>
+        <span className="eyebrow">{{ project_title }}</span>
+        <h2>{module.label}</h2>
       </div>
-      <section className="blank-module" aria-label={`Módulo ${moduleId} sin contenido`} />
+      <section className="module-surface" aria-label={module.label}>
+        <div className="module-empty">
+          <span>{module.slug}</span>
+          <p>Área lista para implementar la lógica específica de {module.label.toLowerCase()}.</p>
+        </div>
+      </section>
     </div>
   );
 }

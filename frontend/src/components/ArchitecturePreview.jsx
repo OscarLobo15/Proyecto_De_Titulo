@@ -13,6 +13,19 @@ const iconMap = {
   langgraph: Brain,
 };
 
+const labelMap = {
+  profile: 'Perfil',
+  os: 'Entorno',
+  frontend: 'Frontend',
+  backend: 'Backend',
+  auth: 'Autenticación',
+  database: 'Base de datos',
+  cloud: 'Plataforma',
+  docker: 'Contenedores',
+  services: 'Microservicios',
+  langgraph: 'IA / Agentes',
+};
+
 export function ArchitecturePreview({ config }) {
   const items = [
     ['profile', config.project_profile],
@@ -41,7 +54,7 @@ export function ArchitecturePreview({ config }) {
           return (
             <div className="architecture-node" key={key}>
               <Icon size={18} />
-              <span>{key}</span>
+              <span>{labelMap[key] ?? key}</span>
               <strong>{value}</strong>
             </div>
           );

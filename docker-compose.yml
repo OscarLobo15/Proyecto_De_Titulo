@@ -7,6 +7,9 @@ services:
       GENERATOR_ENV: development
       BACKEND_PORT: 8000
       GENERATED_PROJECTS_DIR: generated
+      AI_SERVER_URL: ${AI_SERVER_URL:-https://variations-suited-tile-survey.trycloudflare.com}
+      AI_GENERATE_ENDPOINT: ${AI_GENERATE_ENDPOINT:-/generate}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-300}
     ports:
       - "8000:8000"
     volumes:

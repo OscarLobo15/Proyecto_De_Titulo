@@ -1,0 +1,68 @@
+import { Activity, Database, Layers, Server, ShieldCheck } from 'lucide-react';
+import { useEffect, useState } from 'react';
+{% if has_backend %}
+import { getHealth } from '../services/api.js';
+{% endif %}
+
+export function Workspace() {
+  const modules = {{ modules | tojson }};
+  const [apiStatus, setApiStatus] = useState('checking');
+
+  useEffect(() => {
+{% if has_backend %}
+    getHealth()
+      .then((response) => setApiStatus(response.status))
+      .catch(() => setApiStatus('offline'));
+{% else %}
+    setApiStatus('frontend-only');
+{% endif %}
+  }, []);
+
+  return (
+    <div className="page-stack">
+      <div className="page-header">
+        <span className="eyebrow">{{ project_profile }}</span>
+        <h2>{{ project_title }}</h2>
+        <p>{{ description }}</p>
+      </div>
+
+      <div className="metrics-grid">
+        <div className="card">
+          <Activity size={20} className="card-icon" />
+          <span className="card-label">Estado API</span>
+          <strong className="card-value">{apiStatus}</strong>
+        </div>
+{% if has_backend %}
+        <div className="card">
+          <Server size={20} className="card-icon" />
+          <span className="card-label">Backend</span>
+          <strong className="card-value">{{ project.backend }}</strong>
+        </div>
+        <div className="card">
+          <Database size={20} className="card-icon" />
+          <span className="card-label">Datos</span>
+          <strong className="card-value">{{ project.database }}</strong>
+        </div>
+{% endif %}
+{% if include_login %}
+        <div className="card">
+          <ShieldCheck size={20} className="card-icon" />
+          <span className="card-label">Acceso</span>
+          <strong className="card-value">{{ project.auth }}</strong>
+        </div>
+{% endif %}
+      </div>
+
+      <section className="module-grid" aria-label="Módulos del proyecto">
+        {modules.map((module) => (
+          <article className="module-card" key={module.slug}>
+            <Layers size={18} className="card-icon" />
+            <span>{module.slug}</span>
+            <h3>{module.label}</h3>
+            <p>Base funcional preparada para extender esta parte del producto.</p>
+          </article>
+        ))}
+      </section>
+    </div>
+  );
+}

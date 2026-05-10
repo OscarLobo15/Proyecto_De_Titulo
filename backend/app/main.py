@@ -1,16 +1,31 @@
 import base64
 import json
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
+from app.ai.project_analysis_graph import AIModelParseError, analyze_project_with_ai
+from app.ai.project_generation_graph import AIGenerationError, TemplateSelectionError, generate_project_with_ai
 from app.config import settings
 from app.generator import ProjectGenerator
-from app.models import GenerateResponse, ProjectConfig
+from app.models import (
+    AIGenerateProjectRequest,
+    AIGenerateProjectResponse,
+    AnalyzeProjectRequest,
+    AnalyzeProjectResponse,
+    GenerateResponse,
+    ProjectConfig,
+)
 from app.options import OPTIONS
+from app.services.ai_client import AIConfigurationError, AIRemoteServiceError
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 app = FastAPI(title="Reference Architecture Generator API", version="1.0.0")
 
 app.add_middleware(
@@ -29,6 +44,17 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         content={"detail": f"Error interno del servidor: {type(exc).__name__}: {exc}"},
         headers={"Access-Control-Allow-Origin": request.headers.get("origin", "*")},
     )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    if request.url.path in {"/api/ai/analyze-project", "/api/ai/generate-project"}:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "El request IA debe incluir campos validos y no vacios."},
+            headers={"Access-Control-Allow-Origin": request.headers.get("origin", "*")},
+        )
+    return await request_validation_exception_handler(request, exc)
 
 
 @app.get("/health")
@@ -61,6 +87,55 @@ def generate_project(config: ProjectConfig) -> GenerateResponse:
             f'iwr "{settings.public_url}/install/{token}/ps1" | iex'
             if config.target_os in ("windows", "both") else None
         ),
+    )
+
+
+@app.post("/api/ai/analyze-project", response_model=AnalyzeProjectResponse)
+def analyze_project(request: AnalyzeProjectRequest) -> AnalyzeProjectResponse:
+    try:
+        analysis = analyze_project_with_ai(request.message)
+    except AIConfigurationError as exc:
+        logger.warning("AI configuration error: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except AIRemoteServiceError as exc:
+        logger.warning("AI remote service error: %s", exc)
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except AIModelParseError as exc:
+        logger.warning("AI model parse error: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return AnalyzeProjectResponse(success=True, analysis=analysis)
+
+
+@app.post("/api/ai/generate-project", response_model=AIGenerateProjectResponse)
+def ai_generate_project(request: AIGenerateProjectRequest) -> AIGenerateProjectResponse:
+    try:
+        result = generate_project_with_ai(request.prompt, request.project_name)
+    except AIConfigurationError as exc:
+        logger.warning("AI configuration error: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except AIRemoteServiceError as exc:
+        logger.warning("AI remote service error: %s", exc)
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except TemplateSelectionError as exc:
+        logger.warning("AI template selection error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except AIGenerationError as exc:
+        logger.warning("AI project generation error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    config = result["project_config"]
+    return AIGenerateProjectResponse(
+        success=True,
+        project_name=config.project_name,
+        selected_architecture=result["selected_architecture"],
+        selected_templates=result["selected_templates"],
+        project_config=config.model_dump(),
+        download_url=result["download_url"],
+        file_name=result["file_name"],
+        install_command=result["install_command"],
+        install_command_windows=result.get("install_command_windows"),
+        message=result["message"],
     )
 
 

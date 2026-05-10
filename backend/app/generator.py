@@ -2,6 +2,7 @@ import shutil
 import zipfile
 from datetime import datetime
 from pathlib import Path
+import re
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
@@ -147,6 +148,10 @@ class ProjectGenerator:
             return True
         if relative_path.name == "Login.jsx" and not context["include_login"]:
             return True
+        if relative_path.name == "Home.jsx":
+            return True
+        if relative_path.name == "Dashboard.jsx":
+            return True
         if "context" in parts and not context["include_login"]:
             return True
         if relative_path.name in ["authService.js", "firebase.js", "firebaseNotes.md"] and not context["include_login"]:
@@ -185,6 +190,7 @@ class ProjectGenerator:
         include_ai_backend = include_ai and has_backend
         include_login = has_frontend and config.auth != "none"
         service_count = config.service_count if has_backend and config.include_services else 0
+        modules = self._build_modules(config)
         extra_services = [
             {"name": f"Service {index}", "slug": f"service-{index}", "port": 8001 + index}
             for index in range(1, service_count + 1)
@@ -270,6 +276,8 @@ class ProjectGenerator:
             "project_profile": config.project_profile,
             "include_services": config.include_services and service_count > 0,
             "service_count": service_count,
+            "modules": modules,
+            "primary_route": "/app/workspace",
             "extra_services": extra_services,
             "deploy_targets": deploy_targets,
         }
@@ -281,3 +289,13 @@ class ProjectGenerator:
             "aws": "AWS App Runner / ECS",
             "azure": "Azure Container Apps",
         }[cloud]
+
+    def _build_modules(self, config: ProjectConfig) -> list[dict[str, str]]:
+        source_modules = config.functional_modules or ["operaciones", "usuarios", "reportes"]
+        modules = []
+        for module in source_modules:
+            label = module.strip().replace("-", " ").title()
+            slug = re.sub(r"[^a-z0-9]+", "-", module.strip().lower()).strip("-")
+            if slug and slug not in [item["slug"] for item in modules]:
+                modules.append({"slug": slug, "label": label})
+        return modules[:8] or [{"slug": "operaciones", "label": "Operaciones"}]

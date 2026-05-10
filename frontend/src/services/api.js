@@ -14,3 +14,13 @@ export async function generateProject(payload) {
   const { data } = await api.post('/generate', payload);
   return data;
 }
+
+export async function analyzeProject(message) {
+  const { data } = await api.post('/api/ai/analyze-project', { message }, { timeout: 310000 });
+  return data;
+}
+
+export async function generateProjectWithAI(payload) {
+  const { data } = await api.post('/api/ai/generate-project', payload, { timeout: 310000 });
+  return data;
+}

@@ -2,16 +2,32 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth } from '../config/firebase.js';
 
+const STORAGE_KEY = '{{ project_name }}:dev-user';
+
 export function watchAuthState(callback) {
+  if (!auth) {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    callback(stored ? JSON.parse(stored) : null);
+    return () => {};
+  }
   return onAuthStateChanged(auth, callback);
 }
 
 export async function loginWithEmail(email, password) {
+  if (!auth) {
+    const user = { email, displayName: email.split('@')[0] };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+    return user;
+  }
   const credential = await signInWithEmailAndPassword(auth, email, password);
   return credential.user;
 }
 
 export async function logoutUser() {
+  if (!auth) {
+    window.localStorage.removeItem(STORAGE_KEY);
+    return;
+  }
   await signOut(auth);
 }
 {% elif project.auth == "supabase" %}

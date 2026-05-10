@@ -32,7 +32,9 @@ class ProjectConfig(BaseModel):
     include_langgraph: bool = False
     service_count: int = Field(default=0, ge=0, le=5)
     target_os: TargetOS = "mac"
-    pages: list[str] = Field(default_factory=lambda: ["home", "login", "dashboard", "settings", "not-found"])
+    pages: list[str] = Field(default_factory=lambda: ["login", "workspace", "settings", "not-found"])
+    functional_modules: list[str] = Field(default_factory=lambda: ["operaciones", "usuarios", "reportes"])
+    user_roles: list[str] = Field(default_factory=list)
 
     @field_validator("project_name")
     @classmethod
@@ -46,6 +48,16 @@ class ProjectConfig(BaseModel):
     @classmethod
     def validate_containers(cls, value: list[ContainerOption]) -> list[ContainerOption]:
         return list(dict.fromkeys(value))
+
+    @field_validator("functional_modules", "user_roles")
+    @classmethod
+    def validate_named_items(cls, value: list[str]) -> list[str]:
+        cleaned = []
+        for item in value:
+            normalized = item.strip().lower()
+            if normalized and normalized not in cleaned:
+                cleaned.append(normalized)
+        return cleaned[:8]
 
     @model_validator(mode="after")
     def normalize_by_project_type(self) -> "ProjectConfig":
@@ -101,3 +113,63 @@ class GenerateResponse(BaseModel):
     config_token: str
     install_command: str
     install_command_windows: Optional[str] = None
+
+
+class AnalyzeProjectRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=12000)
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("El mensaje no puede estar vacio.")
+        return cleaned
+
+
+class ProjectAnalysis(BaseModel):
+    project_type: str = ""
+    frontend: str = ""
+    backend: str = ""
+    database: str = ""
+    auth: str = ""
+    deployment: str = ""
+    required_modules: list[str] = Field(default_factory=list)
+    recommended_templates: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+
+class AnalyzeProjectResponse(BaseModel):
+    success: Literal[True]
+    analysis: ProjectAnalysis
+
+
+class AIGenerateProjectRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=12000)
+    project_name: str = Field(min_length=3, max_length=60)
+
+    @field_validator("prompt")
+    @classmethod
+    def validate_prompt(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("El prompt no puede estar vacio.")
+        return cleaned
+
+    @field_validator("project_name")
+    @classmethod
+    def validate_ai_project_name(cls, value: str) -> str:
+        return ProjectConfig.validate_project_name(value)
+
+
+class AIGenerateProjectResponse(BaseModel):
+    success: Literal[True]
+    project_name: str
+    selected_architecture: dict
+    selected_templates: list[str]
+    project_config: dict
+    download_url: str
+    file_name: str
+    install_command: str
+    install_command_windows: Optional[str] = None
+    message: str
