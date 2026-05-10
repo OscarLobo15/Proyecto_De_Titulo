@@ -192,7 +192,11 @@ class ProjectGenerator:
         service_count = config.service_count if has_backend and config.include_services else 0
         modules = self._build_modules(config)
         extra_services = [
-            {"name": f"Service {index}", "slug": f"service-{index}", "port": 8001 + index}
+            {
+                "name": self._service_name_for_index(config, index),
+                "slug": self._service_slug_for_index(config, index),
+                "port": 8001 + index,
+            }
             for index in range(1, service_count + 1)
         ]
         deploy_targets = []
@@ -277,6 +281,12 @@ class ProjectGenerator:
             "include_services": config.include_services and service_count > 0,
             "service_count": service_count,
             "modules": modules,
+            "role_labels": self._build_role_labels(config),
+            "navigation_layout": config.navigation_layout,
+            "login_variant": config.login_variant,
+            "experience_mode": config.experience_mode,
+            "admin_style": config.admin_style,
+            "navigation_sections": self._build_navigation_sections(config),
             "primary_route": "/app/workspace",
             "extra_services": extra_services,
             "deploy_targets": deploy_targets,
@@ -299,3 +309,34 @@ class ProjectGenerator:
             if slug and slug not in [item["slug"] for item in modules]:
                 modules.append({"slug": slug, "label": label})
         return modules[:8] or [{"slug": "operaciones", "label": "Operaciones"}]
+
+    def _build_role_labels(self, config: ProjectConfig) -> list[str]:
+        source_roles = config.user_roles or ["admin"]
+        roles = []
+        for role in source_roles:
+            normalized = role.strip().lower()
+            if normalized and normalized not in roles:
+                roles.append(normalized)
+        return roles[:8]
+
+    def _build_navigation_sections(self, config: ProjectConfig) -> list[dict[str, str]]:
+        sections = []
+        for section in config.navigation_sections or []:
+            slug = re.sub(r"[^a-z0-9]+", "-", section.strip().lower()).strip("-")
+            label = section.strip().replace("-", " ").title()
+            if slug and slug not in [item["slug"] for item in sections]:
+                sections.append({"slug": slug, "label": label})
+        return sections[:8]
+
+    def _service_name_for_index(self, config: ProjectConfig, index: int) -> str:
+        modules = self._build_modules(config)
+        if config.project_profile == "ai" and index == 1:
+            return "Agent Service"
+        if index - 1 < len(modules):
+            return f"{modules[index - 1]['label']} Service"
+        return f"Service {index}"
+
+    def _service_slug_for_index(self, config: ProjectConfig, index: int) -> str:
+        name = self._service_name_for_index(config, index).lower()
+        slug = re.sub(r"[^a-z0-9]+", "-", name).strip("-")
+        return slug or f"service-{index}"

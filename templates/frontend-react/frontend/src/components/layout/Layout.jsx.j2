@@ -4,8 +4,10 @@ import { Sidebar } from './Sidebar.jsx';
 
 export function Layout() {
   return (
-    <div className="shell">
+    <div className="shell shell--{{ navigation_layout }} shell--{{ experience_mode }}">
+{% if navigation_layout == "sidebar" %}
       <Sidebar />
+{% endif %}
       <div className="workspace">
         <Header />
         <main className="workspace-main">
@@ -15,4 +17,3 @@ export function Layout() {
     </div>
   );
 }
-

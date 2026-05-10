@@ -3,7 +3,12 @@ import { useParams } from 'react-router-dom';
 export function ModulePage() {
   const { moduleSlug } = useParams();
   const modules = {{ modules | tojson }};
-  const module = modules.find((item) => item.slug === moduleSlug) || { label: 'Módulo', slug: moduleSlug };
+  const navigationSections = {{ navigation_sections | tojson }};
+  const roles = {{ role_labels | tojson }};
+  const module = modules.find((item) => item.slug === moduleSlug)
+    || navigationSections.find((item) => item.slug === moduleSlug)
+    || { label: 'Módulo', slug: moduleSlug };
+  const isNavigationSection = navigationSections.some((item) => item.slug === moduleSlug);
 
   return (
     <div className="module-page">
@@ -14,7 +19,13 @@ export function ModulePage() {
       <section className="module-surface" aria-label={module.label}>
         <div className="module-empty">
           <span>{module.slug}</span>
-          <p>Área lista para implementar la lógica específica de {module.label.toLowerCase()}.</p>
+          <p>
+            {isNavigationSection
+              ? `Vista base preparada para el apartado ${module.label.toLowerCase()}.`
+              : `Área lista para implementar la lógica específica de ${module.label.toLowerCase()}.`}
+          </p>
+          <p>Roles previstos: {roles.join(', ')}</p>
+          <p>Persistencia base: {{ project.database }}</p>
         </div>
       </section>
     </div>

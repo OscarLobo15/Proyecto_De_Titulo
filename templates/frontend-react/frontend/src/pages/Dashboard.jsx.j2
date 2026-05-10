@@ -5,6 +5,8 @@ import { getHealth } from '../services/api.js';
 {% endif %}
 
 export function Dashboard() {
+  const modules = {{ modules | tojson }};
+  const roles = {{ role_labels | tojson }};
   const [apiStatus, setApiStatus] = useState('checking');
 
   useEffect(() => {
@@ -20,8 +22,9 @@ export function Dashboard() {
   return (
     <div className="page-stack">
       <div className="page-header">
-        <span className="eyebrow">{{ project_profile }}</span>
-        <h2>Principal</h2>
+        <span className="eyebrow">{{ project_profile }} · {{ "admin directo" if experience_mode == "admin" else "portal + admin" }} · {{ "operations workspace" if admin_style == "operations" else "business control" }}</span>
+        <h2>{{ "Panel admin" if experience_mode == "admin" else "Administración" }}</h2>
+        <p>Resumen visible de la arquitectura seleccionada, la navegación definida y el estado base del MVP generado.</p>
       </div>
       <div className="metrics-grid">
         <div className="card">
@@ -44,7 +47,7 @@ export function Dashboard() {
         <div className="card">
           <Layers size={20} className="card-icon" />
           <span className="card-label">Módulos</span>
-          <strong className="card-value">3</strong>
+          <strong className="card-value">{modules.length}</strong>
         </div>
 {% if include_services %}
         <div className="card">
@@ -53,7 +56,23 @@ export function Dashboard() {
           <strong className="card-value">{{ service_count }}</strong>
         </div>
 {% endif %}
+        <div className="card">
+          <Activity size={20} className="card-icon" />
+          <span className="card-label">Roles</span>
+          <strong className="card-value">{roles.length}</strong>
+        </div>
       </div>
+
+      <section className="module-grid">
+        {modules.map((module) => (
+          <article className="module-card" key={module.slug}>
+            <Layers size={18} className="card-icon" />
+            <span>{module.slug}</span>
+            <h3>{module.label}</h3>
+            <p>Visible porque fue incluido en la configuración inicial del proyecto.</p>
+          </article>
+        ))}
+      </section>
     </div>
   );
 }

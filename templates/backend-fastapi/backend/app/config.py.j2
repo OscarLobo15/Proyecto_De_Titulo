@@ -6,10 +6,13 @@ class Settings(BaseSettings):
     api_port: int = {{ backend_port }}
     database_url: str = ""
     firebase_project_id: str = ""
+    auth_provider: str = "{{ project.auth }}"
+    database_provider: str = "{{ project.database }}"
+    cloud_target: str = "{{ cloud }}"
+    project_profile: str = "{{ project_profile }}"
     cors_origins: list[str] = ["http://localhost:{{ frontend_port }}"]
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()
-

@@ -33,19 +33,35 @@ export async function logoutUser() {
 {% elif project.auth == "supabase" %}
 import { supabase } from '../config/supabase.js';
 
+const STORAGE_KEY = '{{ project_name }}:supabase-dev-user';
+
 export function watchAuthState(callback) {
+  if (!supabase) {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    callback(stored ? JSON.parse(stored) : null);
+    return () => {};
+  }
   supabase.auth.getUser().then(({ data }) => callback(data.user));
   const { data } = supabase.auth.onAuthStateChange((_event, session) => callback(session?.user || null));
   return () => data.subscription.unsubscribe();
 }
 
 export async function loginWithEmail(email, password) {
+  if (!supabase) {
+    const user = { email, displayName: email.split('@')[0] };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+    return user;
+  }
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
   return data.user;
 }
 
 export async function logoutUser() {
+  if (!supabase) {
+    window.localStorage.removeItem(STORAGE_KEY);
+    return;
+  }
   await supabase.auth.signOut();
 }
 {% else %}

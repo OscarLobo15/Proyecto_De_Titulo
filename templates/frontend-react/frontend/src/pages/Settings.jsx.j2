@@ -1,15 +1,37 @@
 export function Settings() {
+  const roles = {{ role_labels | tojson }};
+  const modules = {{ modules | tojson }};
+
   return (
     <div className="page-stack">
       <div className="page-header">
         <span className="eyebrow">Configuración</span>
         <h2>Settings</h2>
+        <p>La pantalla refleja la configuración técnica con la que se generó este MVP.</p>
       </div>
       <div className="settings-panel">
         <dl className="settings-list">
           <div>
             <dt>Cloud</dt>
             <dd>{{ cloud_label }}</dd>
+          </div>
+          <div>
+            <dt>Navegación</dt>
+            <dd>{{ navigation_layout }}</dd>
+          </div>
+{% if include_login %}
+          <div>
+            <dt>Login</dt>
+            <dd>{{ "editorial" if login_variant == "ibm-classic" else "operations console" if login_variant == "digital-workers" else "client portal" }}</dd>
+          </div>
+{% endif %}
+          <div>
+            <dt>Acceso</dt>
+            <dd>{{ "admin directo" if experience_mode == "admin" else "portal + admin" }}</dd>
+          </div>
+          <div>
+            <dt>Panel admin</dt>
+            <dd>{{ "operations workspace" if admin_style == "operations" else "business control" }}</dd>
           </div>
           <div>
             <dt>Autenticación</dt>
@@ -27,6 +49,30 @@ export function Settings() {
             <dt>Perfil</dt>
             <dd>{{ project_profile }}</dd>
           </div>
+          <div>
+            <dt>SO objetivo</dt>
+            <dd>{{ project.target_os }}</dd>
+          </div>
+          <div>
+            <dt>Docker</dt>
+            <dd>{{ 'habilitado' if include_docker else 'no incluido' }}</dd>
+          </div>
+          <div>
+            <dt>Script local</dt>
+            <dd>{{ 'incluido' if include_dev_script else 'omitido' }}</dd>
+          </div>
+          <div>
+            <dt>Roles</dt>
+            <dd>{roles.join(', ')}</dd>
+          </div>
+          <div>
+            <dt>Módulos</dt>
+            <dd>{modules.map((module) => module.label).join(', ')}</dd>
+          </div>
+          <div>
+            <dt>Apartados extra</dt>
+            <dd>{{ navigation_sections | map(attribute="label") | join(", ") if navigation_sections else "sin apartados adicionales" }}</dd>
+          </div>
 {% if include_services %}
           <div>
             <dt>Servicios</dt>
@@ -38,4 +84,3 @@ export function Settings() {
     </div>
   );
 }
-

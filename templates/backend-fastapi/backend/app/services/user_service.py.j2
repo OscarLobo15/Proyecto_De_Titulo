@@ -6,6 +6,5 @@ def get_current_user() -> UserResponse:
         id="demo-user",
         email="demo@example.com",
         name="Demo User",
-        roles=["admin"],
+        roles={{ role_labels | tojson }},
     )
-

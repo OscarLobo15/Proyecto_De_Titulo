@@ -1,3 +1,4 @@
+import { LogIn, Sparkles, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button.jsx';
@@ -11,6 +12,8 @@ export function Login() {
   const [password, setPassword] = useState('password123');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [mode, setMode] = useState('login');
+  const isRegister = mode === 'register';
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -27,11 +30,106 @@ export function Login() {
     }
   }
 
+{% if login_variant == "digital-workers" %}
+  return (
+    <main className="auth-screen auth-screen--workers">
+      <div className="auth-grain" />
+      <div className="auth-workers-shell">
+        <div className="auth-workers-brand">
+          <div className="auth-workers-logo-box">
+            <img src="/ibm-logo.png" alt="IBM" />
+          </div>
+          <div>
+            <span className="eyebrow">Operations console</span>
+            <h1>IBM {{ project_title }}</h1>
+            <p className="auth-workers-inline">
+              <Sparkles size={14} />
+              Operación inteligente, agentes y gobierno del workspace
+            </p>
+          </div>
+        </div>
+
+        <form className="auth-panel auth-panel--workers" onSubmit={handleSubmit}>
+          <div className="auth-title-row">
+            {isRegister ? <UserPlus size={18} /> : <LogIn size={18} />}
+            <div>
+              <h2>{isRegister ? 'Crear acceso' : 'Iniciar sesión'}</h2>
+              <p className="auth-helper">Proveedor configurado: {{ project.auth }}</p>
+            </div>
+          </div>
+          {isRegister && <Input id="name" label="Nombre" value="Usuario demo" readOnly />}
+          <Input id="email" label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+          <Input
+            id="password"
+            label="Password"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+          {error && <p className="error">{error}</p>}
+          <Button disabled={submitting}>{submitting ? 'Procesando...' : isRegister ? 'Crear cuenta y continuar' : 'Continuar'}</Button>
+          <button className="text-link auth-switch-button" type="button" onClick={() => setMode(isRegister ? 'login' : 'register')}>
+            {isRegister ? 'Ya tengo acceso' : 'Registrarme'}
+          </button>
+        </form>
+      </div>
+    </main>
+  );
+{% elif login_variant == "digital-buyers" %}
+  return (
+    <main className="auth-screen auth-screen--buyers">
+      <div className="auth-buyers-panel">
+        <section className="auth-buyers-hero">
+          <img src="/ibm-logo.png" alt="IBM" />
+          <span className="eyebrow">Client portal</span>
+          <h1>{{ project_title }}</h1>
+          <p>{{ description }}</p>
+        </section>
+
+        <form className="auth-panel auth-panel--buyers" onSubmit={handleSubmit}>
+          <div className="auth-title-row">
+            {isRegister ? <UserPlus size={20} /> : <LogIn size={20} />}
+            <div>
+              <h2>{isRegister ? 'Crear cuenta' : 'Acceder'}</h2>
+              <p className="auth-helper">Proveedor configurado: {{ project.auth }}</p>
+            </div>
+          </div>
+          {isRegister && <Input id="name" label="Nombre" value="Usuario demo" readOnly />}
+          <Input id="email" label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+          <Input
+            id="password"
+            label="Password"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+          {error && <p className="error">{error}</p>}
+          <Button disabled={submitting}>{submitting ? 'Procesando...' : isRegister ? 'Crear cuenta y continuar' : 'Continuar'}</Button>
+          <button className="text-link auth-switch-button" type="button" onClick={() => setMode(isRegister ? 'login' : 'register')}>
+            {isRegister ? 'Ya tengo una cuenta' : 'Registrarme'}
+          </button>
+        </form>
+      </div>
+    </main>
+  );
+{% else %}
   return (
     <main className="auth-screen">
+      <section className="auth-editorial-panel">
+        <img className="auth-editorial-logo" src="/ibm-logo.png" alt="IBM" />
+        <span className="eyebrow">{{ project_profile }}</span>
+        <h1>{{ project_title }}</h1>
+        <p>{{ description }}</p>
+      </section>
       <form className="auth-panel" onSubmit={handleSubmit}>
-        <span className="eyebrow">{{ project_title }}</span>
-        <h1>Iniciar sesion</h1>
+        <div className="auth-title-row">
+          {isRegister ? <UserPlus size={20} /> : <LogIn size={20} />}
+          <div>
+            <h2>{isRegister ? 'Crear cuenta' : 'Iniciar sesión'}</h2>
+            <p className="auth-helper">Proveedor configurado: {{ project.auth }}</p>
+          </div>
+        </div>
+        {isRegister && <Input id="name" label="Nombre" value="Usuario demo" readOnly />}
         <Input id="email" label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
         <Input
           id="password"
@@ -41,8 +139,12 @@ export function Login() {
           onChange={(event) => setPassword(event.target.value)}
         />
         {error && <p className="error">{error}</p>}
-        <Button disabled={submitting}>{submitting ? 'Ingresando...' : 'Ingresar'}</Button>
+        <Button disabled={submitting}>{submitting ? 'Procesando...' : isRegister ? 'Crear cuenta y continuar' : 'Continuar'}</Button>
+        <button className="text-link auth-switch-button" type="button" onClick={() => setMode(isRegister ? 'login' : 'register')}>
+          {isRegister ? 'Ya tengo una cuenta' : 'Registrarme'}
+        </button>
       </form>
     </main>
   );
+{% endif %}
 }

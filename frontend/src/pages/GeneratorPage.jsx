@@ -1,7 +1,8 @@
-import { ArrowLeft, ArrowRight, BrainCircuit, Clipboard, Globe, Loader2, MessageSquare, PackageCheck, Search, User } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BarChart3, BrainCircuit, Clipboard, Cog, Globe, LayoutDashboard, LayoutPanelTop, Loader2, MessageSquare, PackageCheck, Plug, Rows4, Search, Settings, ShieldCheck, User, Users, Workflow, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ibmLogo from '../assets/brand/ibm-logo.png';
 import { ArchitecturePreview } from '../components/ArchitecturePreview.jsx';
+import { LiveProjectPreview } from '../components/LiveProjectPreview.jsx';
 import { OptionCard } from '../components/OptionCard.jsx';
 import { generateProject, generateProjectWithAI, getOptions } from '../services/api.js';
 
@@ -22,12 +23,17 @@ const initialConfig = {
   include_langgraph: false,
   service_count: 0,
   target_os: 'mac',
+  navigation_layout: 'sidebar',
+  login_variant: 'ibm-classic',
+  experience_mode: 'admin',
+  admin_style: 'operations',
   pages: ['login', 'workspace', 'settings', 'not-found'],
+  navigation_sections: [],
   functional_modules: ['operaciones', 'usuarios', 'reportes'],
   user_roles: [],
 };
 
-const steps = ['Proyecto', 'Stack', 'Servicios', 'Entrega'];
+const baseSteps = ['Proyecto', 'Stack', 'Servicios'];
 
 function normalizeConfig(nextConfig) {
   let normalized = { ...nextConfig };
@@ -53,6 +59,7 @@ function normalizeConfig(nextConfig) {
       ...normalized,
       containers: apiContainers.includes('backend') ? apiContainers : ['backend', ...apiContainers],
       pages: [],
+      navigation_sections: [],
     };
   }
 
@@ -95,6 +102,9 @@ export function GeneratorPage() {
   const [aiStatus, setAiStatus] = useState('idle');
   const [aiError, setAiError] = useState('');
   const [aiResult, setAiResult] = useState(null);
+  const [aiPreviewConfig, setAiPreviewConfig] = useState(null);
+  const [aiRefreshStatus, setAiRefreshStatus] = useState('idle');
+  const [aiStep, setAiStep] = useState(0);
   const modeBarRef = useRef(null);
   const manualScrollPendingRef = useRef(false);
 
@@ -111,6 +121,22 @@ export function GeneratorPage() {
   }, [mode, step]);
 
   const canGoNext = useMemo(() => config.project_name.trim().length >= 3, [config.project_name]);
+  const hasFrontend = config.project_type !== 'api';
+  const steps = useMemo(() => (hasFrontend ? [...baseSteps, 'Vista previa', 'Entrega'] : [...baseSteps, 'Entrega']), [hasFrontend]);
+  const aiHasFrontend = aiPreviewConfig ? aiPreviewConfig.project_type !== 'api' : true;
+  const aiSteps = useMemo(() => (aiHasFrontend ? ['Generación', 'Review', 'Vista previa', 'Entrega'] : ['Generación', 'Review', 'Entrega']), [aiHasFrontend]);
+
+  useEffect(() => {
+    if (step > steps.length - 1) {
+      setStep(steps.length - 1);
+    }
+  }, [step, steps.length]);
+
+  useEffect(() => {
+    if (aiStep > aiSteps.length - 1) {
+      setAiStep(aiSteps.length - 1);
+    }
+  }, [aiStep, aiSteps.length]);
 
   function updateField(field, value) {
     setConfig((current) => normalizeConfig({ ...current, [field]: value }));
@@ -159,14 +185,18 @@ export function GeneratorPage() {
     setAiStatus('loading');
     setAiError('');
     setAiResult(null);
+    setAiRefreshStatus('idle');
 
     try {
       const response = await generateProjectWithAI({ prompt: message, project_name: projectName });
+      const nextPreviewConfig = response.project_config ? normalizeConfig(response.project_config) : null;
       setAiResult(response);
+      setAiPreviewConfig(nextPreviewConfig);
       if (response.project_config) {
         setConfig(normalizeConfig(response.project_config));
         setStep(0);
       }
+      setAiStep(1);
       setAiStatus('success');
     } catch (generationError) {
       setAiError(generationError.response?.data?.detail || 'El servicio de análisis no pudo procesar la solicitud. Inténtelo nuevamente.');
@@ -175,11 +205,69 @@ export function GeneratorPage() {
   }
 
   function handleEditAIConfig() {
-    if (aiResult?.project_config) {
-      setConfig(normalizeConfig(aiResult.project_config));
+    if (aiPreviewConfig) {
+      setConfig(normalizeConfig(aiPreviewConfig));
       setStep(0);
     }
     setMode('manual');
+  }
+
+  function updateAiPreviewConfig(field, value) {
+    setAiPreviewConfig((current) => normalizeConfig({ ...(current || initialConfig), [field]: value }));
+  }
+
+  function goToAIStep(nextStep) {
+    setAiStep(nextStep);
+  }
+
+  function addNavigationSection(field, value, target = 'manual') {
+    const normalizedValue = value.trim().toLowerCase().replace(/\s+/g, '-');
+    if (!normalizedValue) return;
+
+    if (target === 'ai') {
+      setAiPreviewConfig((current) => {
+        const base = current || initialConfig;
+        const nextItems = base[field].includes(normalizedValue)
+          ? base[field]
+          : [...base[field], normalizedValue];
+        return normalizeConfig({ ...base, [field]: nextItems });
+      });
+      return;
+    }
+
+    setConfig((current) => {
+      const nextItems = current[field].includes(normalizedValue)
+        ? current[field]
+        : [...current[field], normalizedValue];
+      return normalizeConfig({ ...current, [field]: nextItems });
+    });
+  }
+
+  function removeNavigationSection(field, value, target = 'manual') {
+    if (target === 'ai') {
+      setAiPreviewConfig((current) => normalizeConfig({ ...(current || initialConfig), [field]: (current?.[field] || []).filter((item) => item !== value) }));
+      return;
+    }
+    setConfig((current) => normalizeConfig({ ...current, [field]: current[field].filter((item) => item !== value) }));
+  }
+
+  async function refreshAIPackage() {
+    if (!aiPreviewConfig) return;
+    setAiRefreshStatus('loading');
+    setAiError('');
+
+    try {
+      const response = await generateProject(aiPreviewConfig);
+      setAiResult((current) => ({
+        ...current,
+        ...response,
+        project_config: aiPreviewConfig,
+      }));
+      setAiRefreshStatus('success');
+    } catch (refreshError) {
+      setAiError(refreshError.response?.data?.detail || 'No fue posible regenerar el paquete con las opciones visuales seleccionadas.');
+      setAiRefreshStatus('idle');
+    }
   }
 
   function scrollToManualStart() {
@@ -236,48 +324,130 @@ export function GeneratorPage() {
       </div>
 
       {mode === 'ai' ? (
-        <section className="ai-workspace" aria-labelledby="ai-generation-title">
-          <div className="ai-prompt-panel">
-            <div className="panel-heading compact">
-              <span className="eyebrow">Análisis de requerimientos</span>
-              <h2 id="ai-generation-title">Descripción del proyecto</h2>
-              <p>Describa los requerimientos funcionales del proyecto. El sistema interpretará las necesidades y configurará automáticamente los parámetros técnicos.</p>
+        <section className="manual-workspace ai-flow-workspace" aria-labelledby="ai-generation-title">
+          <div className="generator-panel">
+            <div className="panel-heading manual-heading">
+              <span className="eyebrow">Asistencia IA</span>
+              <h2 id="ai-generation-title">Generación guiada por requerimientos</h2>
+              <p>Describe el proyecto en lenguaje natural. La IA propondrá la arquitectura, poblará el MVP con módulos y roles detectados, y luego podrás revisar, previsualizar y entregar el paquete final.</p>
             </div>
-            <div className="ai-analysis-panel">
-              <label className="field">
-                <span>Nombre del proyecto</span>
-                <input
-                  value={aiProjectName}
-                  onChange={(event) => setAiProjectName(event.target.value)}
-                  placeholder="mi-proyecto-base"
-                />
-              </label>
-              <label className="field ai-input">
-                <span>Requerimientos del proyecto</span>
-                <textarea
-                  value={aiMessage}
-                  onChange={(event) => setAiMessage(event.target.value)}
-                  placeholder="Plataforma web para gestión de reservas. Roles: paciente, profesional, administrador. Autenticación con SSO, dashboard analítico, base de datos relacional, despliegue en contenedores sobre GCP."
-                />
-              </label>
-              <button className="ai-analyze-button" disabled={aiStatus === 'loading'} type="button" onClick={handleGenerateProjectWithAI}>
-                {aiStatus === 'loading' ? <Loader2 className="spin" size={18} /> : <BrainCircuit size={18} />}
-                Analizar y configurar
-              </button>
-              {aiError && <p className="notice error">{aiError}</p>}
-            </div>
-          </div>
 
-          <div className="ai-review-panel">
-            {aiResult ? (
-              <AIGenerationResult result={aiResult} onEditConfig={handleEditAIConfig} />
-            ) : (
-              <div className="ai-empty-state">
-                <span className="eyebrow">Resultado del análisis</span>
-                <h2>Configuración generada</h2>
-                <p>El sistema determinará automáticamente el tipo de proyecto, stack tecnológico, autenticación, base de datos y plantillas aplicables según los requerimientos ingresados.</p>
-              </div>
-            )}
+            <nav className="progress-indicator" aria-label="Pasos del flujo IA">
+              {aiSteps.map((label, index) => (
+                <div
+                  key={label}
+                  className={`progress-step${index === aiStep ? ' active' : ''}${index < aiStep ? ' done' : ''}`}
+                >
+                  <button type="button" onClick={() => goToAIStep(index)}>
+                    <span className="progress-dot">{index < aiStep ? '✓' : index + 1}</span>
+                    <span className="progress-label">{label}</span>
+                  </button>
+                </div>
+              ))}
+            </nav>
+
+            <div className="form-surface">
+              {aiStep === 0 && (
+                <div className="form-grid ai-step-grid">
+                  <label className="field span-2">
+                    <span>Nombre del proyecto</span>
+                    <input
+                      value={aiProjectName}
+                      onChange={(event) => setAiProjectName(event.target.value)}
+                      placeholder="mi-proyecto-base"
+                    />
+                  </label>
+                  <label className="field span-2 ai-input">
+                    <span>Requerimientos del proyecto</span>
+                    <textarea
+                      value={aiMessage}
+                      onChange={(event) => setAiMessage(event.target.value)}
+                      placeholder="Plataforma web para gestión de reservas. Roles: paciente, profesional, administrador. Autenticación con SSO, dashboard analítico, base de datos relacional, despliegue en contenedores sobre GCP."
+                    />
+                  </label>
+                  <div className="info-row span-2">
+                    La IA convertirá los requerimientos en stack técnico, roles, módulos funcionales, navegación base y estructura del MVP generado.
+                  </div>
+                  <button className="generate-button span-2" disabled={aiStatus === 'loading'} type="button" onClick={handleGenerateProjectWithAI}>
+                    {aiStatus === 'loading' ? <Loader2 className="spin" size={18} /> : <BrainCircuit size={18} />}
+                    Analizar y configurar
+                  </button>
+                  {aiError && <p className="notice error span-2">{aiError}</p>}
+                </div>
+              )}
+
+              {aiStep === 1 && (
+                aiResult && aiPreviewConfig ? (
+                  <AIReviewStep
+                    previewConfig={aiPreviewConfig}
+                    result={aiResult}
+                    onEditConfig={handleEditAIConfig}
+                  />
+                ) : (
+                  <div className="ai-empty-state">
+                    <span className="eyebrow">Review</span>
+                    <h2>Aún no hay una arquitectura generada</h2>
+                    <p>Completa el paso de generación para revisar la propuesta estructurada de la IA.</p>
+                  </div>
+                )
+              )}
+
+              {aiStep === 2 && aiHasFrontend && (
+                aiPreviewConfig ? (
+                  <>
+                    <LiveProjectPreview config={aiPreviewConfig} source="ai" />
+                    <DesignCustomizationPanel
+                      config={aiPreviewConfig}
+                      options={options}
+                      onAddNavigationSection={(value) => addNavigationSection('navigation_sections', value, 'ai')}
+                      onRemoveNavigationSection={(value) => removeNavigationSection('navigation_sections', value, 'ai')}
+                      onUpdateField={updateAiPreviewConfig}
+                    />
+                  </>
+                ) : (
+                  <div className="ai-empty-state">
+                    <span className="eyebrow">Vista previa</span>
+                    <h2>La vista previa se habilita después del análisis</h2>
+                    <p>Cuando la IA genere una configuración con frontend, aquí verás el MVP navegable antes de la entrega.</p>
+                  </div>
+                )
+              )}
+
+              {aiStep === (aiHasFrontend ? 3 : 2) && (
+                aiPreviewConfig ? (
+                  <AIDeliveryStep
+                    aiRefreshStatus={aiRefreshStatus}
+                    previewConfig={aiPreviewConfig}
+                    result={aiResult}
+                    options={options}
+                    onRefreshPackage={refreshAIPackage}
+                    onUpdatePreviewConfig={updateAiPreviewConfig}
+                  />
+                ) : (
+                  <div className="ai-empty-state">
+                    <span className="eyebrow">Entrega</span>
+                    <h2>Primero necesitamos una configuración generada</h2>
+                    <p>Después del análisis podrás regenerar el paquete final con los ajustes elegidos y copiar el comando de instalación.</p>
+                  </div>
+                )
+              )}
+            </div>
+
+            <div className="navigation-row">
+              <button type="button" disabled={aiStep === 0} onClick={() => goToAIStep(Math.max(0, aiStep - 1))}>
+                <ArrowLeft size={16} />
+                Anterior
+              </button>
+              <button
+                type="button"
+                className="nav-primary"
+                disabled={aiStep >= aiSteps.length - 1 || (aiStep === 0 && !aiResult)}
+                onClick={() => goToAIStep(Math.min(aiSteps.length - 1, aiStep + 1))}
+              >
+                Siguiente
+                <ArrowRight size={16} />
+              </button>
+            </div>
           </div>
         </section>
       ) : (
@@ -303,7 +473,7 @@ export function GeneratorPage() {
           ))}
         </nav>
 
-        <form className="form-surface">
+        <div className="form-surface">
           {step === 0 && (
             <div className="form-grid">
               <label className="field span-2">
@@ -414,7 +584,20 @@ export function GeneratorPage() {
             </div>
           )}
 
-          {step === 3 && (
+          {step === 3 && hasFrontend && (
+            <>
+              <LiveProjectPreview config={config} />
+              <DesignCustomizationPanel
+                config={config}
+                options={options}
+                onAddNavigationSection={(value) => addNavigationSection('navigation_sections', value)}
+                onRemoveNavigationSection={(value) => removeNavigationSection('navigation_sections', value)}
+                onUpdateField={updateField}
+              />
+            </>
+          )}
+
+          {step === (hasFrontend ? 4 : 3) && (
             <div className="delivery-grid">
               <label className="toggle-row">
                 <input
@@ -474,7 +657,8 @@ export function GeneratorPage() {
               )}
             </div>
           )}
-        </form>
+
+        </div>
 
         {error && <p className="notice error">{error}</p>}
 
@@ -554,7 +738,7 @@ export function GeneratorPage() {
   );
 }
 
-function AIGenerationResult({ result, onEditConfig }) {
+function AIReviewStep({ onEditConfig, previewConfig, result }) {
   const architecture = result.selected_architecture || {};
   const rows = [
     ['Proyecto', result.project_name],
@@ -567,14 +751,14 @@ function AIGenerationResult({ result, onEditConfig }) {
   ];
 
   return (
-    <div className="ai-result-panel">
-      <div className="ai-download-row">
-        <div>
-          <span>Arquitectura configurada</span>
-          <strong>{result.project_name}</strong>
-        </div>
+    <div className="ai-result-panel ai-step-panel">
+      <div className="panel-heading compact ai-step-heading">
+        <span className="eyebrow">Review</span>
+        <h2>Arquitectura propuesta por la IA</h2>
+        <p>Este review traduce los requerimientos detectados a una base real de proyecto. Los módulos, roles y la navegación inferior alimentan tanto el preview como el MVP final.</p>
       </div>
-      <div className="ai-result-grid">
+
+      <div className="ai-result-grid ai-review-grid">
         {rows.map(([label, value]) => (
           <div className="ai-result-item" key={label}>
             <span>{label}</span>
@@ -583,9 +767,10 @@ function AIGenerationResult({ result, onEditConfig }) {
         ))}
       </div>
 
-      <ResultList title="Módulos identificados" items={architecture.modules} />
-      <ResultList title="Roles identificados" items={architecture.roles} />
-      <ResultList title="Plantillas aplicadas" items={result.selected_templates} />
+      <ResultTagSection title="Módulos que se incorporarán al MVP" items={previewConfig.functional_modules} emptyLabel="No se detectaron módulos específicos." />
+      <ResultTagSection title="Roles que se incorporarán al MVP" items={previewConfig.user_roles} emptyLabel="No se detectaron roles específicos." />
+      <ResultTagSection title="Apartados de navegación derivados" items={previewConfig.navigation_sections} emptyLabel="La base usará solo workspace, administración y settings." />
+      <ResultTagSection title="Plantillas aplicadas" items={result.selected_templates} emptyLabel="No definido" />
 
       <div className="ai-actions-row">
         <button type="button" onClick={onEditConfig}>
@@ -593,33 +778,290 @@ function AIGenerationResult({ result, onEditConfig }) {
           Revisar en configuración manual
         </button>
       </div>
+    </div>
+  );
+}
 
-      {result.install_command && (
+function AIDeliveryStep({ aiRefreshStatus, onRefreshPackage, onUpdatePreviewConfig, options, previewConfig, result }) {
+  return (
+    <div className="delivery-grid">
+      <label className="toggle-row">
+        <input
+          checked={previewConfig.include_docker}
+          type="checkbox"
+          onChange={(event) => onUpdatePreviewConfig('include_docker', event.target.checked)}
+        />
+        <span>Incluir configuración Docker (Dockerfile y docker-compose)</span>
+      </label>
+      <label className="toggle-row">
+        <input
+          checked={previewConfig.include_dev_script}
+          type="checkbox"
+          onChange={(event) => onUpdatePreviewConfig('include_dev_script', event.target.checked)}
+        />
+        <span>Incluir script de ejecución local (dev.sh)</span>
+      </label>
+      <div className="option-group span-2">
+        <span>Entorno de desarrollo</span>
+        <div className="option-grid">
+          {options?.targetOs?.map((option) => (
+            <OptionCard
+              key={option.value}
+              description={option.description}
+              label={option.label}
+              selected={previewConfig.target_os === option.value}
+              onClick={() => onUpdatePreviewConfig('target_os', option.value)}
+            />
+          ))}
+        </div>
+      </div>
+      <button className="generate-button" disabled={aiRefreshStatus === 'loading'} type="button" onClick={onRefreshPackage}>
+        {aiRefreshStatus === 'loading' ? <Loader2 className="spin" size={18} /> : <PackageCheck size={18} />}
+        Generar paquete final
+      </button>
+
+      {result?.install_command && (
         <div className="command-result ai-command-result">
-          <span>Comando de instalación</span>
+          <div className="command-result-header">
+            <span>Comando de instalación — macOS / Linux</span>
+          </div>
           <code>{result.install_command}</code>
           <button type="button" onClick={() => navigator.clipboard?.writeText(result.install_command)}>
             <Clipboard size={15} />
             Copiar comando
           </button>
+          {result.install_command_windows && (
+            <>
+              <span className="command-result-label">Comando de instalación — Windows (PowerShell)</span>
+              <code>{result.install_command_windows}</code>
+              <button type="button" onClick={() => navigator.clipboard?.writeText(result.install_command_windows)}>
+                <Clipboard size={15} />
+                Copiar comando Windows
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function ResultList({ title, items = [] }) {
+function DesignCustomizationPanel({ config, options, onAddNavigationSection, onRemoveNavigationSection, onUpdateField }) {
+  const [sectionDraft, setSectionDraft] = useState('');
+  const [activeEditor, setActiveEditor] = useState(config?.auth !== 'none' ? 'login' : 'navigation');
+  const hasFrontend = config?.project_type !== 'api';
+  const editorTabs = [
+    { key: 'login', label: 'Login', visible: config?.auth !== 'none' },
+    { key: 'navigation', label: 'Navegación', visible: true },
+    { key: 'sections', label: 'Apartados', visible: true },
+    { key: 'admin-flow', label: 'Panel admin', visible: true },
+  ].filter((tab) => tab.visible);
+  const componentLibrary = [
+    { value: 'dashboard-ejecutivo', label: 'Dashboard ejecutivo', description: 'KPIs, estado general y resumen de negocio.', Icon: BarChart3 },
+    { value: 'centro-operaciones', label: 'Centro de operaciones', description: 'Vista de seguimiento operativo y actividad diaria.', Icon: Workflow },
+    { value: 'gestion-usuarios', label: 'Gestión de usuarios', description: 'Administración de usuarios, permisos y cuentas.', Icon: Users },
+    { value: 'reportes', label: 'Centro de reportes', description: 'Vistas analíticas, exportables y seguimiento histórico.', Icon: LayoutDashboard },
+    { value: 'integraciones', label: 'Integraciones', description: 'Conectores, APIs externas y estado de servicios.', Icon: Plug },
+    { value: 'configuracion-avanzada', label: 'Configuración avanzada', description: 'Reglas, parámetros y ajustes de plataforma.', Icon: Settings },
+    ...(config?.project_profile === 'ai' ? [{ value: 'agente', label: 'Agente', description: 'Entrada dedicada al flujo conversacional o asistente.', Icon: BrainCircuit }] : []),
+  ];
+
+  if (!hasFrontend || !config) {
+    return null;
+  }
+
+  useEffect(() => {
+    if (!editorTabs.some((tab) => tab.key === activeEditor)) {
+      setActiveEditor(editorTabs[0]?.key || 'navigation');
+    }
+  }, [activeEditor, editorTabs]);
+
+  function handleAddSection() {
+    const cleaned = sectionDraft.trim();
+    if (!cleaned) return;
+    onAddNavigationSection(cleaned);
+    setSectionDraft('');
+  }
+
   return (
-    <div className="ai-list-block">
+    <section className="design-customization-panel" aria-label="Opciones de diseño visual">
+      <div className="design-minimal-header">
+        <span className="eyebrow">Sistema visual</span>
+        <div className="design-minimal-copy">
+          <h3>Diseño base del proyecto</h3>
+          <p>Define cómo se verá la navegación, el acceso y el panel administrativo en la versión final del proyecto.</p>
+        </div>
+      </div>
+
+      <div className="design-editor-tabs" role="tablist" aria-label="Editar diseño">
+        {editorTabs.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            className={activeEditor === tab.key ? 'active' : ''}
+            onClick={() => setActiveEditor(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="design-editor-surface">
+        {activeEditor === 'navigation' && (
+          <div className="option-group">
+            <span>Estructura de navegación</span>
+            <CompactChoiceGrid options={options?.navigationLayouts} value={config.navigation_layout} onSelect={(value) => onUpdateField('navigation_layout', value)} />
+          </div>
+        )}
+
+        {activeEditor === 'login' && config.auth !== 'none' && (
+          <div className="option-group">
+            <span>Diseño de login</span>
+            <CompactChoiceGrid options={options?.loginVariants} value={config.login_variant} onSelect={(value) => onUpdateField('login_variant', value)} />
+          </div>
+        )}
+
+        {activeEditor === 'admin-flow' && (
+          <div className="design-admin-panel">
+            <div className="option-group">
+              <span>Cómo se entra al panel admin</span>
+              <AdminFlowSelector options={options?.experienceModes} value={config.experience_mode} onSelect={(value) => onUpdateField('experience_mode', value)} />
+            </div>
+            <div className="option-group">
+              <span>Estilo del panel admin</span>
+              <CompactChoiceGrid options={options?.adminStyles} value={config.admin_style} onSelect={(value) => onUpdateField('admin_style', value)} />
+            </div>
+          </div>
+        )}
+
+        {activeEditor === 'sections' && (
+          <div className="design-sections-panel">
+            <div className="design-sections-header">
+              <div>
+                <span className="eyebrow">Navegación</span>
+                <h3>Componentes de navegación</h3>
+                <p>Agrega apartados reales del producto. Se mostrarán en el {config.navigation_layout === 'sidebar' ? 'sidebar' : 'navbar'} y abrirán vistas base en el MVP.</p>
+              </div>
+              <div className="design-section-icons" aria-hidden="true">
+                {config.navigation_layout === 'sidebar' ? <Rows4 size={18} /> : <LayoutPanelTop size={18} />}
+                <Cog size={18} />
+              </div>
+            </div>
+
+            <div className="navigation-library-grid">
+              {componentLibrary
+                .filter((item) => !config.navigation_sections?.includes(item.value))
+                .map(({ value, label, description, Icon }) => (
+                  <button key={value} type="button" className="navigation-library-card" onClick={() => onAddNavigationSection(value)}>
+                    <Icon size={18} />
+                    <strong>{label}</strong>
+                    <span>{description}</span>
+                  </button>
+                ))}
+            </div>
+
+            {config.include_services && config.service_count > 0 && (
+              <div className="services-preview-note">
+                <span className="eyebrow">Servicios</span>
+                <p>El preview también mostrará navegación entre {config.service_count} servicio{config.service_count > 1 ? 's' : ''} adicional{config.service_count > 1 ? 'es' : ''}.</p>
+              </div>
+            )}
+
+            <div className="design-sections-form">
+              <label className="field">
+                <span>Nuevo apartado personalizado</span>
+                <input
+                  value={sectionDraft}
+                  onChange={(event) => setSectionDraft(event.target.value)}
+                  placeholder="Ej: auditoría, aprobaciones, mesa de control"
+                />
+              </label>
+              <button type="button" className="section-add-button" onClick={handleAddSection}>
+                Agregar
+              </button>
+            </div>
+
+            <div className="design-chip-row">
+              {config.navigation_sections?.length ? (
+                config.navigation_sections.map((section) => (
+                  <button key={section} type="button" className="design-chip" onClick={() => onRemoveNavigationSection(section)}>
+                    {section.replace(/-/g, ' ')}
+                    <X size={14} />
+                  </button>
+                ))
+              ) : (
+                <p className="field-help">Aún no agregas componentes extra. La base seguirá usando workspace, dashboard, módulos y settings.</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function CompactChoiceGrid({ onSelect, options = [], value }) {
+  return (
+    <div className="compact-choice-grid">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={`compact-choice${value === option.value ? ' active' : ''}`}
+          onClick={() => onSelect(option.value)}
+        >
+          <strong>{option.label}</strong>
+          <span>{option.description}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AdminFlowSelector({ onSelect, options = [], value }) {
+  return (
+    <div className="admin-flow-grid">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={`admin-flow-card${value === option.value ? ' active' : ''}`}
+          onClick={() => onSelect(option.value)}
+        >
+          <div className="admin-flow-card-top">
+            {option.value === 'admin' ? <ShieldCheck size={18} /> : <LayoutDashboard size={18} />}
+            <strong>{option.label}</strong>
+          </div>
+          <span>{option.description}</span>
+          <div className="admin-flow-route" aria-hidden="true">
+            <span>Login</span>
+            <span />
+            <span>{option.value === 'admin' ? 'Panel admin' : 'Portal'}</span>
+            {option.value !== 'admin' && (
+              <>
+                <span />
+                <span>Administración</span>
+              </>
+            )}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ResultTagSection({ emptyLabel, items = [], title }) {
+  return (
+    <div className="ai-tag-block">
       <span>{title}</span>
       {items.length > 0 ? (
-        <ul>
+        <ul className="ai-tag-list">
           {items.map((item) => (
             <li key={item}>{item}</li>
           ))}
         </ul>
       ) : (
-        <p>No definido</p>
+        <p>{emptyLabel}</p>
       )}
     </div>
   );

@@ -8,6 +8,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$PROJECT_ROOT/backend"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
 VENV_DIR="$PROJECT_ROOT/.venv"
+BACKEND_VENV_FALLBACK="$BACKEND_DIR/venv"
 
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-8000}"
@@ -198,18 +199,68 @@ start_backend_with_optional_reload() {
 }
 
 ensure_backend_deps() {
+  venv_is_usable() {
+    local candidate_dir="$1"
+    [ -x "$candidate_dir/bin/python" ] || return 1
+    "$candidate_dir/bin/python" -m pip --version >/dev/null 2>&1 || return 1
+    "$candidate_dir/bin/python" -c "import fastapi, uvicorn" >/dev/null 2>&1 || return 1
+  }
+
+  recreate_venv() {
+    print_line "${YELLOW}Recreating .venv...${NC}"
+    rm -rf "$VENV_DIR"
+    python3 -m venv "$VENV_DIR"
+  }
+
+  if [ ! -d "$VENV_DIR" ] && venv_is_usable "$BACKEND_VENV_FALLBACK"; then
+    print_line "${YELLOW}Using existing backend virtualenv at backend/venv.${NC}"
+    VENV_DIR="$BACKEND_VENV_FALLBACK"
+  fi
+
   if [ ! -d "$VENV_DIR" ]; then
     print_line "${YELLOW}Python venv not found. Creating .venv...${NC}"
     python3 -m venv "$VENV_DIR"
   fi
 
-  # shellcheck disable=SC1091
-  source "$VENV_DIR/bin/activate"
+  local venv_python="$VENV_DIR/bin/python"
+  if [ ! -x "$venv_python" ]; then
+    print_line "${YELLOW}Python executable not found inside .venv.${NC}"
+    recreate_venv
+    venv_python="$VENV_DIR/bin/python"
+  fi
+
+  # Some local venvs end up with a broken pip entrypoint. Bootstrap pip from the venv Python when needed.
+  if ! "$venv_python" -m pip --version >/dev/null 2>&1; then
+    print_line "${YELLOW}pip is missing or broken inside .venv. Restoring it with ensurepip...${NC}"
+    "$venv_python" -m ensurepip --upgrade >/dev/null 2>&1
+  fi
+
+  # If pip is still unavailable, the virtualenv itself is inconsistent. Recreate it cleanly.
+  if ! "$venv_python" -m pip --version >/dev/null 2>&1; then
+    print_line "${YELLOW}pip could not be restored inside .venv.${NC}"
+    if venv_is_usable "$BACKEND_VENV_FALLBACK"; then
+      print_line "${YELLOW}Falling back to backend/venv because it is already usable.${NC}"
+      VENV_DIR="$BACKEND_VENV_FALLBACK"
+      venv_python="$VENV_DIR/bin/python"
+    else
+      recreate_venv
+      venv_python="$VENV_DIR/bin/python"
+      "$venv_python" -m ensurepip --upgrade >/dev/null 2>&1
+    fi
+  fi
 
   local marker="$VENV_DIR/.backend_deps_installed"
-  if [ ! -f "$marker" ] || [ "$BACKEND_DIR/requirements.txt" -nt "$marker" ]; then
+  if [ ! -f "$marker" ] || [ "$BACKEND_DIR/requirements.txt" -nt "$marker" ] || ! "$venv_python" -c "import fastapi" >/dev/null 2>&1; then
     print_line "${CYAN}Installing backend dependencies...${NC}"
-    pip install -q -r "$BACKEND_DIR/requirements.txt"
+    if ! "$venv_python" -m pip install -q -r "$BACKEND_DIR/requirements.txt"; then
+      if [ "$VENV_DIR" != "$BACKEND_VENV_FALLBACK" ] && venv_is_usable "$BACKEND_VENV_FALLBACK"; then
+        print_line "${YELLOW}Dependency install failed. Reusing backend/venv instead.${NC}"
+        VENV_DIR="$BACKEND_VENV_FALLBACK"
+        venv_python="$VENV_DIR/bin/python"
+      else
+        return 1
+      fi
+    fi
     touch "$marker"
   else
     print_line "${GREEN}Backend dependencies are synced.${NC}"

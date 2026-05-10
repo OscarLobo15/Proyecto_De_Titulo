@@ -63,6 +63,23 @@ OPTIONS = {
         {"value": "windows", "label": "Windows PowerShell", "description": "Scripts PowerShell optimizados para entornos Windows 10 y Windows 11."},
         {"value": "both", "label": "Ambos (macOS + Windows)", "description": "Genera tanto el script Bash (.sh) como el PowerShell (.ps1) de forma simultánea."},
     ],
+    "navigationLayouts": [
+        {"value": "sidebar", "label": "Sidebar", "description": "Navegación lateral persistente, alineada a paneles administrativos y consolas operativas."},
+        {"value": "navbar", "label": "Navbar", "description": "Navegación horizontal superior, útil para productos más livianos y vistas de usuario final."},
+    ],
+    "loginVariants": [
+        {"value": "ibm-classic", "label": "Editorial", "description": "Pantalla limpia tipo IBM/Carbon con bloque editorial y formulario sobrio."},
+        {"value": "digital-workers", "label": "Operations console", "description": "Acceso oscuro con foco operacional, pensado para equipos internos y consolas de trabajo."},
+        {"value": "digital-buyers", "label": "Client portal", "description": "Acceso luminoso y más comercial para productos orientados a clientes o autoservicio."},
+    ],
+    "experienceModes": [
+        {"value": "admin", "label": "Admin directo", "description": "Después del login entra directo al panel operativo o consola administrativa."},
+        {"value": "user", "label": "Portal + admin", "description": "Después del login entra al portal principal y el panel admin queda como acceso secundario."},
+    ],
+    "adminStyles": [
+        {"value": "operations", "label": "Operations workspace", "description": "Panel oscuro y más denso, con navegación lateral tipo consola operativa."},
+        {"value": "business", "label": "Business control", "description": "Panel claro y más ejecutivo, con estructura tipo portal administrativo."},
+    ],
     "pages": [
         {"value": "login", "label": "Login"},
         {"value": "workspace", "label": "Workspace"},

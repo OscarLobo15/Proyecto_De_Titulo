@@ -1,3 +1,5 @@
+import { BarChart3, FolderKanban, LayoutDashboard, Layers, Menu, Search, Settings } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
 {% if include_login %}
 import { LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -7,22 +9,69 @@ export function Header() {
 {% if include_login %}
   const { user, logout } = useAuth();
 {% endif %}
+  const navigationSections = {{ navigation_sections | tojson }};
+  const modules = {{ modules | tojson }};
 
   return (
-    <header className="topbar">
+    <header className="topbar topbar--{{ navigation_layout }}">
       <div className="topbar-title">
-        <span className="eyebrow">{{ project_title }}</span>
-        <h1>Workspace operativo</h1>
-      </div>
-      <div className="ibm-wordmark" aria-label="IBM">IBM</div>
-{% if include_login %}
-      <div className="user-menu">
-        <span>{user?.email || user?.displayName || 'Usuario'}</span>
-        <button className="icon-button" type="button" onClick={logout} title="Cerrar sesión">
-          <LogOut size={16} />
-        </button>
-      </div>
+{% if navigation_layout == "navbar" %}
+        <img className="topbar-logo" src="/ibm-logo.png" alt="IBM" />
 {% endif %}
+        <span className="eyebrow">{{ project_profile }} · {{ cloud_label }}</span>
+        <h1>{{ project_title }} runtime</h1>
+      </div>
+
+{% if navigation_layout == "navbar" %}
+      <nav className="topbar-nav" aria-label="Principal">
+        <NavLink to="/app/workspace">
+          <LayoutDashboard size={16} />
+          Workspace
+        </NavLink>
+        <NavLink to="/app/dashboard">
+          <BarChart3 size={16} />
+          {{ "Panel admin" if experience_mode == "admin" else "Administración" }}
+        </NavLink>
+        {navigationSections.map((section) => (
+          <NavLink key={section.slug} to={`/app/module/${section.slug}`}>
+            <FolderKanban size={16} />
+            {section.label}
+          </NavLink>
+        ))}
+        {modules.map((module) => (
+          <NavLink key={module.slug} to={`/app/module/${module.slug}`}>
+            <Layers size={16} />
+            {module.label}
+          </NavLink>
+        ))}
+        <NavLink to="/app/settings">
+          <Settings size={16} />
+          Settings
+        </NavLink>
+      </nav>
+      <div className="topbar-actions">
+        <button className="icon-button" type="button" aria-label="Buscar">
+          <Search size={16} />
+        </button>
+        <button className="icon-button" type="button" aria-label="Menú">
+          <Menu size={16} />
+        </button>
+{% else %}
+      <div className="ibm-wordmark" aria-label="IBM">
+        <img src="/ibm-logo.png" alt="IBM" />
+      </div>
+      <div className="topbar-actions">
+{% endif %}
+
+{% if include_login %}
+        <div className="user-menu">
+          <span>{user?.email || user?.displayName || 'Usuario'}</span>
+          <button className="icon-button" type="button" onClick={logout} title="Cerrar sesión">
+            <LogOut size={16} />
+          </button>
+        </div>
+{% endif %}
+      </div>
     </header>
   );
 }

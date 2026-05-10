@@ -6,6 +6,7 @@ import { getHealth } from '../services/api.js';
 
 export function Workspace() {
   const modules = {{ modules | tojson }};
+  const roles = {{ role_labels | tojson }};
   const [apiStatus, setApiStatus] = useState('checking');
 
   useEffect(() => {
@@ -32,6 +33,11 @@ export function Workspace() {
           <span className="card-label">Estado API</span>
           <strong className="card-value">{apiStatus}</strong>
         </div>
+        <div className="card">
+          <Layers size={20} className="card-icon" />
+          <span className="card-label">Perfil</span>
+          <strong className="card-value">{{ project_profile }}</strong>
+        </div>
 {% if has_backend %}
         <div className="card">
           <Server size={20} className="card-icon" />
@@ -50,6 +56,19 @@ export function Workspace() {
           <span className="card-label">Acceso</span>
           <strong className="card-value">{{ project.auth }}</strong>
         </div>
+{% else %}
+        <div className="card">
+          <ShieldCheck size={20} className="card-icon" />
+          <span className="card-label">Acceso</span>
+          <strong className="card-value">publico</strong>
+        </div>
+{% endif %}
+{% if include_services %}
+        <div className="card">
+          <Server size={20} className="card-icon" />
+          <span className="card-label">Servicios</span>
+          <strong className="card-value">{{ service_count }}</strong>
+        </div>
 {% endif %}
       </div>
 
@@ -62,6 +81,45 @@ export function Workspace() {
             <p>Base funcional preparada para extender esta parte del producto.</p>
           </article>
         ))}
+      </section>
+
+      <section className="settings-panel">
+        <dl className="settings-list">
+          <div>
+            <dt>Navegación</dt>
+            <dd>{{ navigation_layout }}</dd>
+          </div>
+          <div>
+            <dt>Acceso</dt>
+            <dd>{{ "admin directo" if experience_mode == "admin" else "portal + admin" }}</dd>
+          </div>
+          <div>
+            <dt>Panel admin</dt>
+            <dd>{{ "operations workspace" if admin_style == "operations" else "business control" }}</dd>
+          </div>
+{% if include_login %}
+          <div>
+            <dt>Login</dt>
+            <dd>{{ "editorial" if login_variant == "ibm-classic" else "operations console" if login_variant == "digital-workers" else "client portal" }}</dd>
+          </div>
+{% endif %}
+          <div>
+            <dt>Cloud</dt>
+            <dd>{{ cloud_label }}</dd>
+          </div>
+          <div>
+            <dt>Roles</dt>
+            <dd>{roles.join(', ')}</dd>
+          </div>
+          <div>
+            <dt>Contenedores</dt>
+            <dd>{{ containers | join(", ") }}</dd>
+          </div>
+          <div>
+            <dt>Scripts</dt>
+            <dd>{{ "dev.sh / setup.sh" if include_dev_script else "sin script local" }}</dd>
+          </div>
+        </dl>
       </section>
     </div>
   );

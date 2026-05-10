@@ -1,21 +1,48 @@
-import { Bot, Cpu, Layers, PanelLeft, Settings } from 'lucide-react';
+import { BarChart3, Bot, Cpu, FolderKanban, Layers, PanelLeft, Settings, Users } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
+{% if include_login %}
+import { useAuth } from '../../context/AuthContext.jsx';
+{% endif %}
 
 export function Sidebar() {
   const modules = {{ modules | tojson }};
+  const navigationSections = {{ navigation_sections | tojson }};
+{% if include_login %}
+  const { user } = useAuth();
+{% endif %}
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar sidebar--{{ experience_mode }}">
       <div className="sidebar-inner">
         <div className="brand">
-          <div className="brand-mark">RA</div>
-          <span className="brand-name">{{ project_title }}</span>
+          <img className="brand-logo" src="/ibm-logo.png" alt="IBM" />
+          <div>
+            <span className="eyebrow">{{ experience_mode }}</span>
+            <span className="brand-name">{{ project_title }}</span>
+          </div>
         </div>
         <nav>
           <NavLink to="/app/workspace">
             <PanelLeft size={16} />
-            Inicio
+            Workspace
           </NavLink>
+
+          <NavLink to="/app/dashboard">
+            <BarChart3 size={16} />
+            {{ "Panel admin" if experience_mode == "admin" else "Administración" }}
+          </NavLink>
+
+          {navigationSections.length > 0 && (
+            <div className="nav-section">
+              <div className="nav-label">Apartados</div>
+              {navigationSections.map((section) => (
+                <NavLink key={section.slug} to={`/app/module/${section.slug}`}>
+                  <FolderKanban size={16} />
+                  {section.label}
+                </NavLink>
+              ))}
+            </div>
+          )}
 
           <div className="nav-section">
             <div className="nav-label">Módulos</div>
@@ -56,6 +83,21 @@ export function Sidebar() {
             </NavLink>
           </div>
         </nav>
+      </div>
+
+      <div className="sidebar-footer">
+        <div className="sidebar-avatar">
+          <Users size={16} />
+        </div>
+        <div className="sidebar-user-copy">
+{% if include_login %}
+          <strong>{user?.displayName || user?.email || '{{ experience_mode }}'}</strong>
+          <span>{user?.email || 'workspace@ibm.com'}</span>
+{% else %}
+          <strong>{{ experience_mode | title }}</strong>
+          <span>workspace@ibm.com</span>
+{% endif %}
+        </div>
       </div>
     </aside>
   );

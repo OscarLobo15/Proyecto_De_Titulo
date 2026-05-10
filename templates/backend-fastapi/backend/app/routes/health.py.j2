@@ -11,5 +11,10 @@ def health() -> dict:
         "status": "ok",
         "service": "{{ project_name }}",
         "database": get_database_status(),
+        "auth": "{{ project.auth }}",
+        "cloud": "{{ cloud }}",
+        "profile": "{{ project_profile }}",
+        "service_count": {{ service_count }},
+        "modules": {{ modules | tojson }},
+        "roles": {{ role_labels | tojson }},
     }
-

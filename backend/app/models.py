@@ -13,6 +13,10 @@ ProjectType = Literal["web", "api", "fullstack"]
 ProjectProfile = Literal["standard", "ai", "microservices", "api-only"]
 ContainerOption = Literal["frontend", "backend", "services"]
 TargetOS = Literal["mac", "windows", "both"]
+NavigationLayout = Literal["sidebar", "navbar"]
+LoginVariant = Literal["ibm-classic", "digital-workers", "digital-buyers"]
+ExperienceMode = Literal["admin", "user"]
+AdminStyle = Literal["operations", "business"]
 
 
 class ProjectConfig(BaseModel):
@@ -32,7 +36,12 @@ class ProjectConfig(BaseModel):
     include_langgraph: bool = False
     service_count: int = Field(default=0, ge=0, le=5)
     target_os: TargetOS = "mac"
+    navigation_layout: NavigationLayout = "sidebar"
+    login_variant: LoginVariant = "ibm-classic"
+    experience_mode: ExperienceMode = "admin"
+    admin_style: AdminStyle = "operations"
     pages: list[str] = Field(default_factory=lambda: ["login", "workspace", "settings", "not-found"])
+    navigation_sections: list[str] = Field(default_factory=list)
     functional_modules: list[str] = Field(default_factory=lambda: ["operaciones", "usuarios", "reportes"])
     user_roles: list[str] = Field(default_factory=list)
 
@@ -49,7 +58,7 @@ class ProjectConfig(BaseModel):
     def validate_containers(cls, value: list[ContainerOption]) -> list[ContainerOption]:
         return list(dict.fromkeys(value))
 
-    @field_validator("functional_modules", "user_roles")
+    @field_validator("functional_modules", "user_roles", "navigation_sections")
     @classmethod
     def validate_named_items(cls, value: list[str]) -> list[str]:
         cleaned = []
@@ -75,6 +84,7 @@ class ProjectConfig(BaseModel):
             if "backend" not in self.containers:
                 self.containers.insert(0, "backend")
             self.pages = []
+            self.navigation_sections = []
 
         if self.project_type == "fullstack":
             if "frontend" not in self.containers:

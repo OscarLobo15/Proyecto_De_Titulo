@@ -126,6 +126,12 @@ def select_architecture(state: ProjectGenerationState) -> ProjectGenerationState
     else:
         project_type = "web"
 
+    modules = _curate_functional_modules(requirements["functional_modules"])
+    roles = _curate_user_roles(requirements["user_roles"])
+    project_profile = _derive_project_profile(state["normalized_prompt"], modules)
+    include_services, service_count = _derive_service_layout(state["normalized_prompt"], project_profile, project_type)
+    include_langgraph = project_profile == "ai" and project_type != "web"
+
     architecture = {
         "project_type": project_type,
         "frontend": "react" if needs_frontend else "none",
@@ -134,13 +140,13 @@ def select_architecture(state: ProjectGenerationState) -> ProjectGenerationState
         "auth": "firebase" if needs_auth and needs_frontend else "none",
         "include_docker": needs_docker,
         "cloud": cloud_target,
-        "project_profile": "standard",
-        "include_langgraph": False,
-        "include_services": False,
-        "service_count": 0,
+        "project_profile": project_profile,
+        "include_langgraph": include_langgraph,
+        "include_services": include_services,
+        "service_count": service_count,
         "target_os": "mac",
-        "modules": requirements["functional_modules"],
-        "roles": requirements["user_roles"],
+        "modules": modules,
+        "roles": roles,
         "future_integrations": requirements["future_integrations"],
         "constraints": requirements["technical_constraints"],
         "analysis_source": requirements.get("analysis_source", "llm"),
@@ -218,6 +224,11 @@ def generate_project_config(state: ProjectGenerationState) -> ProjectGenerationS
         include_langgraph=architecture["include_langgraph"],
         service_count=architecture["service_count"],
         target_os=architecture["target_os"],
+        navigation_layout="sidebar",
+        login_variant="digital-workers" if architecture["project_profile"] == "ai" else "ibm-classic",
+        experience_mode=_derive_experience_mode(architecture["roles"]),
+        admin_style="business" if _derive_experience_mode(architecture["roles"]) == "user" else "operations",
+        navigation_sections=_derive_navigation_sections(architecture["modules"], architecture["project_profile"]),
         functional_modules=architecture["modules"],
         user_roles=architecture["roles"],
     )
@@ -418,3 +429,101 @@ def _unique(values: list[str]) -> list[str]:
         if normalized and normalized not in cleaned:
             cleaned.append(normalized)
     return cleaned
+
+
+def _curate_functional_modules(values: list[str]) -> list[str]:
+    curated: list[str] = []
+    mappings = [
+        (("reserva", "sesion", "sesión", "horario", "agenda", "calendario", "cita"), "reservas"),
+        (("dashboard", "kpi", "tablero"), "dashboard"),
+        (("admin", "administr", "gobierno"), "administracion"),
+        (("paciente",), "pacientes"),
+        (("psicologo", "psicólogo", "profesional", "terapeuta"), "psicologos"),
+        (("usuario", "perfil", "cuenta"), "usuarios"),
+        (("plan", "suscrip", "billing"), "suscripciones"),
+        (("report", "analit", "analytics"), "reportes"),
+        (("notific", "alerta"), "notificaciones"),
+        (("document", "archivo", "pdf"), "documentos"),
+        (("pago", "cobro"), "pagos"),
+        (("agente", "chatbot", "asistente", "copilot", "ia"), "agente"),
+    ]
+
+    for raw_value in values:
+        normalized = str(raw_value or "").strip().lower()
+        if not normalized:
+            continue
+
+        matched = False
+        for keywords, label in mappings:
+            if any(keyword in normalized for keyword in keywords):
+                matched = True
+                if label not in curated:
+                    curated.append(label)
+
+        if not matched:
+            slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+            if slug and slug not in curated:
+                curated.append("-".join(slug.split("-")[:3]))
+
+    return curated[:8] or ["operaciones"]
+
+
+def _curate_user_roles(values: list[str]) -> list[str]:
+    curated: list[str] = []
+    mappings = [
+        (("admin", "administr"), "administrador"),
+        (("paciente",), "paciente"),
+        (("psicologo", "psicólogo", "profesional", "terapeuta"), "psicologo"),
+        (("usuario", "cliente"), "usuario"),
+    ]
+
+    for raw_value in values:
+        normalized = str(raw_value or "").strip().lower()
+        if not normalized:
+            continue
+
+        matched = False
+        for keywords, label in mappings:
+            if any(keyword in normalized for keyword in keywords):
+                matched = True
+                if label not in curated:
+                    curated.append(label)
+
+        if not matched and normalized not in curated:
+            curated.append(normalized)
+
+    return curated[:8]
+
+
+def _derive_project_profile(prompt: str, modules: list[str]) -> str:
+    lower_prompt = prompt.lower()
+    if any(keyword in lower_prompt for keyword in ["agente", "chatbot", "asistente", "langgraph", "copilot"]) or "agente" in modules:
+        return "ai"
+    if any(keyword in lower_prompt for keyword in ["microservicio", "microservicios", "event-driven", "worker", "cola"]):
+        return "microservices"
+    return "standard"
+
+
+def _derive_service_layout(prompt: str, project_profile: str, project_type: str) -> tuple[bool, int]:
+    if project_type == "web":
+        return False, 0
+    lower_prompt = prompt.lower()
+    if project_profile == "microservices":
+        return True, 2
+    if any(keyword in lower_prompt for keyword in ["servicio adicional", "servicios adicionales", "worker", "jobs", "colas"]):
+        return True, 1
+    return False, 0
+
+
+def _derive_navigation_sections(modules: list[str], project_profile: str) -> list[str]:
+    sections = [module for module in modules if module not in {"dashboard", "administracion", "usuarios"}]
+    if project_profile == "ai" and "agente" not in sections:
+        sections.insert(0, "agente")
+    return sections[:6]
+
+
+def _derive_experience_mode(roles: list[str]) -> str:
+    normalized_roles = {str(role).strip().lower() for role in roles if str(role).strip()}
+    if normalized_roles and normalized_roles - {"admin", "administrador"}:
+        return "user"
+    return "admin"
