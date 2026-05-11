@@ -124,24 +124,26 @@ export function LiveProjectPreview({ config, source = 'manual' }) {
           <strong>{config.project_name}.preview.local</strong>
         </div>
 
-        {(view === 'login' || view === 'register') && showAuth ? (
-          <AuthPreview
-            config={config}
-            mode={view}
-            onContinue={enterApp}
-            onSwitch={() => setView(view === 'login' ? 'register' : 'login')}
-          />
-        ) : (
-          <AppPreview
-            config={config}
-            customSections={customSections}
-            navItems={navItems}
-            roles={roles}
-            serviceItems={serviceItems}
-            setView={setView}
-            view={view}
-          />
-        )}
+        <div className="preview-screen-sizer">
+          {(view === 'login' || view === 'register') && showAuth ? (
+            <AuthPreview
+              config={config}
+              mode={view}
+              onContinue={enterApp}
+              onSwitch={() => setView(view === 'login' ? 'register' : 'login')}
+            />
+          ) : (
+            <AppPreview
+              config={config}
+              customSections={customSections}
+              navItems={navItems}
+              roles={roles}
+              serviceItems={serviceItems}
+              setView={setView}
+              view={view}
+            />
+          )}
+        </div>
       </div>
     </section>
   );
@@ -154,43 +156,40 @@ function AuthPreview({ config, mode, onContinue, onSwitch }) {
   if (variant === 'digital-workers') {
     return (
       <div className="preview-auth-screen preview-auth-screen--workers">
-        <div className="preview-auth-grain" />
-        <div className="preview-auth-workers-shell">
-          <section className="preview-workers-stage">
-            <div className="preview-workers-logo-box">
-              <img src={ibmLogo} alt="IBM" />
-            </div>
-            <div className="preview-workers-brand-copy">
-              <h3>IBM Operations Console</h3>
-              <p className="preview-workers-inline">
-                <Sparkles size={14} />
-                Agentes, operaciones y flujos empresariales
-              </p>
-            </div>
-          </section>
+        <section className="preview-workers-stage">
+          <div className="preview-workers-logo-box">
+            <img src={ibmLogo} alt="IBM" />
+          </div>
+          <div className="preview-workers-brand-copy">
+            <h3>IBM Operations Console</h3>
+            <p className="preview-workers-inline">
+              <Sparkles size={14} />
+              Agentes, operaciones y flujos empresariales
+            </p>
+          </div>
+        </section>
 
-          <form className="preview-workers-card" onSubmit={(event) => { event.preventDefault(); onContinue(); }}>
-            <div className="preview-workers-heading">
-              {isRegister ? <UserPlus size={18} /> : <LogIn size={18} />}
-              <div>
-                <strong>{isRegister ? 'Crear acceso corporativo' : 'Ingresar al workspace'}</strong>
-                <span>{config.auth === 'firebase' ? 'IBM SSO / Firebase Auth' : 'IBM SSO / Supabase Auth'}</span>
-              </div>
+        <form className="preview-workers-form" onSubmit={(event) => { event.preventDefault(); onContinue(); }}>
+          <div className="preview-workers-heading">
+            {isRegister ? <UserPlus size={18} /> : <LogIn size={18} />}
+            <div>
+              <strong>{isRegister ? 'Crear acceso corporativo' : 'Ingresar al workspace'}</strong>
+              <span>{config.auth === 'firebase' ? 'IBM SSO / Firebase Auth' : 'IBM SSO / Supabase Auth'}</span>
             </div>
-            <label>
-              <span>Email corporativo</span>
-              <input readOnly value="usuario@ibm.com" />
-            </label>
-            <label>
-              <span>Password</span>
-              <input readOnly type="password" value="password123" />
-            </label>
-            <button type="submit">{isRegister ? 'Crear cuenta y continuar' : 'Continuar'}</button>
-            <button className="preview-link-button" type="button" onClick={onSwitch}>
-              {isRegister ? 'Ya tengo acceso' : 'Registrarme'}
-            </button>
-          </form>
-        </div>
+          </div>
+          <label>
+            <span>Email corporativo</span>
+            <input readOnly value="usuario@ibm.com" />
+          </label>
+          <label>
+            <span>Password</span>
+            <input readOnly type="password" value="password123" />
+          </label>
+          <button type="submit">{isRegister ? 'Crear cuenta y continuar' : 'Continuar'}</button>
+          <button className="preview-link-button" type="button" onClick={onSwitch}>
+            {isRegister ? 'Ya tengo acceso' : 'Registrarme'}
+          </button>
+        </form>
       </div>
     );
   }
