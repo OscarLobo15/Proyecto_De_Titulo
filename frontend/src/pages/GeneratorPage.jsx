@@ -4,7 +4,8 @@ import ibmLogo from '../assets/brand/ibm-logo.png';
 import { ArchitecturePreview } from '../components/ArchitecturePreview.jsx';
 import { LiveProjectPreview } from '../components/LiveProjectPreview.jsx';
 import { OptionCard } from '../components/OptionCard.jsx';
-import { generateProject, generateProjectWithAI, getOptions } from '../services/api.js';
+import IBMProjectPlanView from '../components/IBMProjectPlanView.jsx';
+import { generateProject, generateProjectWithAI, getOptions, planProject } from '../services/api.js';
 
 const initialConfig = {
   project_name: 'mi-proyecto-base',
@@ -105,6 +106,9 @@ export function GeneratorPage() {
   const [aiPreviewConfig, setAiPreviewConfig] = useState(null);
   const [aiRefreshStatus, setAiRefreshStatus] = useState('idle');
   const [aiStep, setAiStep] = useState(0);
+  const [aiPlan, setAiPlan] = useState(null);
+  const [aiPlanStatus, setAiPlanStatus] = useState('idle');
+  const [aiPlanError, setAiPlanError] = useState('');
   const modeBarRef = useRef(null);
   const manualScrollPendingRef = useRef(false);
 
@@ -124,7 +128,7 @@ export function GeneratorPage() {
   const hasFrontend = config.project_type !== 'api';
   const steps = useMemo(() => (hasFrontend ? [...baseSteps, 'Vista previa', 'Entrega'] : [...baseSteps, 'Entrega']), [hasFrontend]);
   const aiHasFrontend = aiPreviewConfig ? aiPreviewConfig.project_type !== 'api' : true;
-  const aiSteps = useMemo(() => (aiHasFrontend ? ['Generación', 'Review', 'Vista previa', 'Entrega'] : ['Generación', 'Review', 'Entrega']), [aiHasFrontend]);
+  const aiSteps = useMemo(() => (aiHasFrontend ? ['Generación', 'Review', 'Plan IBM', 'Vista previa', 'Entrega'] : ['Generación', 'Review', 'Plan IBM', 'Entrega']), [aiHasFrontend]);
 
   useEffect(() => {
     if (step > steps.length - 1) {
@@ -204,6 +208,25 @@ export function GeneratorPage() {
     }
   }
 
+  async function handleGeneratePlan() {
+    if (!aiResult) return;
+    setAiPlanStatus('loading');
+    setAiPlanError('');
+    setAiPlan(null);
+    try {
+      const response = await planProject({
+        description: aiMessage.trim() || aiResult?.message || '',
+        project_name: aiProjectName.trim() || 'proyecto-ibm',
+        selected_architecture: aiResult?.selected_architecture || null,
+      });
+      setAiPlan(response.plan);
+      setAiPlanStatus('success');
+    } catch (planError) {
+      setAiPlanError(planError.response?.data?.detail || 'No fue posible generar el plan IBM. Inténtelo nuevamente.');
+      setAiPlanStatus('error');
+    }
+  }
+
   function handleEditAIConfig() {
     if (aiPreviewConfig) {
       setConfig(normalizeConfig(aiPreviewConfig));
@@ -218,6 +241,10 @@ export function GeneratorPage() {
 
   function goToAIStep(nextStep) {
     setAiStep(nextStep);
+    // Auto-trigger plan generation when navigating to step 2
+    if (nextStep === 2 && aiResult && aiPlanStatus === 'idle') {
+      handleGeneratePlan();
+    }
   }
 
   function addNavigationSection(field, value, target = 'manual') {
@@ -392,7 +419,16 @@ export function GeneratorPage() {
                 )
               )}
 
-              {aiStep === 2 && aiHasFrontend && (
+              {aiStep === 2 && (
+                <IBMProjectPlanView
+                  plan={aiPlan}
+                  status={aiPlanStatus}
+                  error={aiPlanError}
+                  onRetry={handleGeneratePlan}
+                />
+              )}
+
+              {aiStep === 3 && aiHasFrontend && (
                 aiPreviewConfig ? (
                   <>
                     <LiveProjectPreview config={aiPreviewConfig} source="ai" />
@@ -413,7 +449,7 @@ export function GeneratorPage() {
                 )
               )}
 
-              {aiStep === (aiHasFrontend ? 3 : 2) && (
+              {aiStep === (aiHasFrontend ? 4 : 3) && (
                 aiPreviewConfig ? (
                   <AIDeliveryStep
                     aiRefreshStatus={aiRefreshStatus}
@@ -441,7 +477,7 @@ export function GeneratorPage() {
               <button
                 type="button"
                 className="nav-primary"
-                disabled={aiStep >= aiSteps.length - 1 || (aiStep === 0 && !aiResult)}
+                disabled={aiStep >= aiSteps.length - 1 || (aiStep === 0 && !aiResult) || (aiStep === 2 && aiPlanStatus === 'loading')}
                 onClick={() => goToAIStep(Math.min(aiSteps.length - 1, aiStep + 1))}
               >
                 Siguiente

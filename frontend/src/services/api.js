@@ -24,3 +24,8 @@ export async function generateProjectWithAI(payload) {
   const { data } = await api.post('/api/ai/generate-project', payload, { timeout: 310000 });
   return data;
 }
+
+export async function planProject(payload) {
+  const { data } = await api.post('/api/ai/plan-project', payload, { timeout: 310000 });
+  return data;
+}

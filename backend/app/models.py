@@ -183,3 +183,115 @@ class AIGenerateProjectResponse(BaseModel):
     install_command: str
     install_command_windows: Optional[str] = None
     message: str
+
+
+# ---------------------------------------------------------------------------
+# IBM Method Workspace – Planning models
+# ---------------------------------------------------------------------------
+
+class IBMRole(BaseModel):
+    role_name: str = ""
+    ibm_method_workspace_role: str = ""
+    seniority: str = "Senior"
+    phase: str = "All"
+    dedication_weeks: int = Field(default=4, ge=1, le=52)
+    monthly_rate_clp: int = Field(default=5_000_000, ge=0)
+    justification: str = ""
+
+
+class UserStory(BaseModel):
+    id: str = ""
+    epic: str = ""
+    as_a: str = ""
+    i_want: str = ""
+    so_that: str = ""
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    priority: str = "Must Have"
+    story_points: int = Field(default=3, ge=1, le=13)
+
+
+class WBSTask(BaseModel):
+    task: str = ""
+    responsible_role: str = ""
+    effort_days: float = Field(default=1.0, ge=0.5)
+
+
+class WBSPhase(BaseModel):
+    phase_name: str = ""
+    ibm_method_phase: str = ""
+    duration_weeks: int = Field(default=2, ge=1)
+    objectives: list[str] = Field(default_factory=list)
+    tasks: list[WBSTask] = Field(default_factory=list)
+    deliverables: list[str] = Field(default_factory=list)
+
+
+class ADR(BaseModel):
+    id: str = ""
+    title: str = ""
+    status: str = "Accepted"
+    context: str = ""
+    decision: str = ""
+    rationale: str = ""
+    alternatives_considered: list[str] = Field(default_factory=list)
+    consequences: str = ""
+
+
+class CostRoleBreakdown(BaseModel):
+    role_name: str = ""
+    seniority: str = ""
+    monthly_rate_clp: int = 0
+    duration_months: float = 1.0
+    total_clp: int = 0
+
+
+class CostEstimate(BaseModel):
+    currency: str = "CLP"
+    project_duration_months: int = 6
+    roles_breakdown: list[CostRoleBreakdown] = Field(default_factory=list)
+    total_project_cost_clp: int = 0
+    setup_cost_without_solution_clp: int = 0
+    setup_cost_with_solution_clp: int = 0
+    estimated_savings_clp: int = 0
+    savings_percentage: float = 0.0
+    methodology_note: str = ""
+
+
+class IBMProjectPlan(BaseModel):
+    ibm_recommended_method: str = ""
+    ibm_method_rationale: str = ""
+    service_line: str = ""
+    project_overview: str = ""
+    adoption_journey: str = ""         # "Delivery" | "Solutioning"
+    tailoring_notes: str = ""           # how the method was tailored for this engagement
+    team_roles: list[IBMRole] = Field(default_factory=list)
+    user_stories: list[UserStory] = Field(default_factory=list)
+    wbs_phases: list[WBSPhase] = Field(default_factory=list)
+    architecture_decisions: list[ADR] = Field(default_factory=list)
+    cost_estimate: CostEstimate = Field(default_factory=CostEstimate)
+    project_risks: list[str] = Field(default_factory=list)
+    ibm_assets_recommended: list[str] = Field(default_factory=list)
+
+
+class PlanProjectRequest(BaseModel):
+    description: str = Field(min_length=10, max_length=12000)
+    project_name: str = Field(min_length=3, max_length=60)
+    selected_architecture: Optional[dict] = None
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("La descripcion no puede estar vacia.")
+        return cleaned
+
+    @field_validator("project_name")
+    @classmethod
+    def validate_plan_project_name(cls, value: str) -> str:
+        return ProjectConfig.validate_project_name(value)
+
+
+class PlanProjectResponse(BaseModel):
+    success: Literal[True]
+    project_name: str
+    plan: IBMProjectPlan

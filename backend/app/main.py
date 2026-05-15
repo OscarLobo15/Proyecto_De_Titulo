@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 
 from app.ai.project_analysis_graph import AIModelParseError, analyze_project_with_ai
 from app.ai.project_generation_graph import AIGenerationError, TemplateSelectionError, generate_project_with_ai
+from app.ai.project_planning_graph import plan_project_with_ai
 from app.config import settings
 from app.generator import ProjectGenerator
 from app.models import (
@@ -19,6 +20,8 @@ from app.models import (
     AnalyzeProjectRequest,
     AnalyzeProjectResponse,
     GenerateResponse,
+    PlanProjectRequest,
+    PlanProjectResponse,
     ProjectConfig,
 )
 from app.options import OPTIONS
@@ -137,6 +140,27 @@ def ai_generate_project(request: AIGenerateProjectRequest) -> AIGenerateProjectR
         install_command_windows=result.get("install_command_windows"),
         message=result["message"],
     )
+
+
+@app.post("/api/ai/plan-project", response_model=PlanProjectResponse)
+def plan_project(request: PlanProjectRequest) -> PlanProjectResponse:
+    try:
+        plan = plan_project_with_ai(
+            description=request.description,
+            project_name=request.project_name,
+            selected_architecture=request.selected_architecture,
+        )
+    except AIConfigurationError as exc:
+        logger.warning("AI configuration error in plan-project: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except AIRemoteServiceError as exc:
+        logger.warning("AI remote service error in plan-project: %s", exc)
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Unexpected error in plan-project: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Error generando el plan IBM: {exc}") from exc
+
+    return PlanProjectResponse(success=True, project_name=request.project_name, plan=plan)
 
 
 @app.get("/install/{token}", response_class=PlainTextResponse)
