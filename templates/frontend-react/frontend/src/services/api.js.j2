@@ -10,8 +10,39 @@ export async function getHealth() {
   return data;
 }
 
+{% if include_login %}
 export async function getCurrentUser() {
   const { data } = await api.get('/users/me');
   return data;
 }
+{% endif %}
 
+{% if has_backend and modules %}
+// ── Per-module CRUD helpers ────────────────────────────────────────────────
+{% for module in modules %}
+{% set camel = module.slug.split('-') | map('capitalize') | join('') %}
+export async function get{{ camel }}Items(params = {}) {
+  const { data } = await api.get('/api/{{ module.slug }}', { params });
+  return data;
+}
+
+export async function get{{ camel }}Item(id) {
+  const { data } = await api.get(`/api/{{ module.slug }}/${id}`);
+  return data;
+}
+
+export async function create{{ camel }}Item(payload) {
+  const { data } = await api.post('/api/{{ module.slug }}', payload);
+  return data;
+}
+
+export async function update{{ camel }}Item(id, payload) {
+  const { data } = await api.put(`/api/{{ module.slug }}/${id}`, payload);
+  return data;
+}
+
+export async function delete{{ camel }}Item(id) {
+  await api.delete(`/api/{{ module.slug }}/${id}`);
+}
+{% endfor %}
+{% endif %}

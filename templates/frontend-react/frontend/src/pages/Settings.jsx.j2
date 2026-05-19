@@ -1,6 +1,9 @@
 export function Settings() {
   const roles = {{ role_labels | tojson }};
   const modules = {{ modules | tojson }};
+{% if include_services and extra_services %}
+  const services = {{ extra_services | tojson }};
+{% endif %}
 
   return (
     <div className="page-stack">
@@ -12,8 +15,16 @@ export function Settings() {
       <div className="settings-panel">
         <dl className="settings-list">
           <div>
-            <dt>Cloud</dt>
-            <dd>{{ cloud_label }}</dd>
+            <dt>Perfil</dt>
+            <dd>{{ project_profile }}</dd>
+          </div>
+          <div>
+            <dt>Acceso</dt>
+            <dd>{{ "admin directo" if experience_mode == "admin" else "portal + admin" }}</dd>
+          </div>
+          <div>
+            <dt>Panel admin</dt>
+            <dd>{{ "operations workspace" if admin_style == "operations" else "business control" }}</dd>
           </div>
           <div>
             <dt>Navegación</dt>
@@ -26,14 +37,6 @@ export function Settings() {
           </div>
 {% endif %}
           <div>
-            <dt>Acceso</dt>
-            <dd>{{ "admin directo" if experience_mode == "admin" else "portal + admin" }}</dd>
-          </div>
-          <div>
-            <dt>Panel admin</dt>
-            <dd>{{ "operations workspace" if admin_style == "operations" else "business control" }}</dd>
-          </div>
-          <div>
             <dt>Autenticación</dt>
             <dd>{{ project.auth }}</dd>
           </div>
@@ -42,12 +45,12 @@ export function Settings() {
             <dd>{{ project.database }}</dd>
           </div>
           <div>
-            <dt>Contenedores</dt>
-            <dd>{{ containers | join(", ") }}</dd>
+            <dt>Cloud</dt>
+            <dd>{{ cloud_label }}</dd>
           </div>
           <div>
-            <dt>Perfil</dt>
-            <dd>{{ project_profile }}</dd>
+            <dt>Contenedores</dt>
+            <dd>{{ containers | join(", ") }}</dd>
           </div>
           <div>
             <dt>SO objetivo</dt>
@@ -61,22 +64,30 @@ export function Settings() {
             <dt>Script local</dt>
             <dd>{{ 'incluido' if include_dev_script else 'omitido' }}</dd>
           </div>
+{% if include_ai %}
+          <div>
+            <dt>IA</dt>
+            <dd>{{ "LangGraph + agente" if include_langgraph else "pipeline básico" }}</dd>
+          </div>
+{% endif %}
           <div>
             <dt>Roles</dt>
             <dd>{roles.join(', ')}</dd>
           </div>
           <div>
             <dt>Módulos</dt>
-            <dd>{modules.map((module) => module.label).join(', ')}</dd>
+            <dd>{modules.map((m) => m.label).join(', ')}</dd>
           </div>
+{% if navigation_sections %}
           <div>
             <dt>Apartados extra</dt>
-            <dd>{{ navigation_sections | map(attribute="label") | join(", ") if navigation_sections else "sin apartados adicionales" }}</dd>
+            <dd>{{ navigation_sections | map(attribute="label") | join(", ") }}</dd>
           </div>
-{% if include_services %}
+{% endif %}
+{% if include_services and extra_services %}
           <div>
             <dt>Servicios</dt>
-            <dd>{{ service_count }} activo{{ 's' if service_count > 1 else '' }}</dd>
+            <dd>{services.map((s) => s.name).join(', ')}</dd>
           </div>
 {% endif %}
         </dl>

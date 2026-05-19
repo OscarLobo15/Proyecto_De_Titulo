@@ -1,21 +1,52 @@
-import { Activity, Database, Layers, Server, ShieldCheck } from 'lucide-react';
+import { Layers{% if experience_mode == "admin" %}, Plus{% endif %} } from 'lucide-react';
 import { useEffect, useState } from 'react';
-{% if has_backend %}
+import { Link } from 'react-router-dom';
+{% if has_backend and modules %}
+import {
+  getHealth,
+{% for module in modules %}
+{% set camel = module.slug.split('-') | map('capitalize') | join('') %}
+  get{{ camel }}Items,
+{% endfor %}
+} from '../services/api.js';
+{% elif has_backend %}
 import { getHealth } from '../services/api.js';
 {% endif %}
 
+{% if has_backend and modules %}
+const MODULE_LOADERS = {
+{% for module in modules %}
+{% set camel = module.slug.split('-') | map('capitalize') | join('') %}
+  '{{ module.slug }}': get{{ camel }}Items,
+{% endfor %}
+};
+{% endif %}
+
+const MODULES = {{ modules | tojson }};
+
 export function Workspace() {
-  const modules = {{ modules | tojson }};
-  const roles = {{ role_labels | tojson }};
+{% if has_backend %}
   const [apiStatus, setApiStatus] = useState('checking');
+{% endif %}
+{% if has_backend and modules %}
+  const [counts, setCounts] = useState({});
+{% endif %}
 
   useEffect(() => {
 {% if has_backend %}
     getHealth()
-      .then((response) => setApiStatus(response.status))
+      .then((r) => setApiStatus(r.status ?? 'ok'))
       .catch(() => setApiStatus('offline'));
-{% else %}
-    setApiStatus('frontend-only');
+{% endif %}
+{% if has_backend and modules %}
+    const slugs = MODULES.map((m) => m.slug);
+    Promise.allSettled(slugs.map((slug) => MODULE_LOADERS[slug]())).then((results) => {
+      const next = {};
+      results.forEach((r, i) => {
+        next[slugs[i]] = r.status === 'fulfilled' ? r.value.length : '—';
+      });
+      setCounts(next);
+    });
 {% endif %}
   }, []);
 
@@ -27,100 +58,96 @@ export function Workspace() {
         <p>{{ description }}</p>
       </div>
 
-      <div className="metrics-grid">
-        <div className="card">
-          <Activity size={20} className="card-icon" />
-          <span className="card-label">Estado API</span>
-          <strong className="card-value">{apiStatus}</strong>
-        </div>
-        <div className="card">
-          <Layers size={20} className="card-icon" />
-          <span className="card-label">Perfil</span>
-          <strong className="card-value">{{ project_profile }}</strong>
-        </div>
+{% if admin_style == "business" %}
+      <div className="kpi-bar">
 {% if has_backend %}
-        <div className="card">
-          <Server size={20} className="card-icon" />
-          <span className="card-label">Backend</span>
-          <strong className="card-value">{{ project.backend }}</strong>
-        </div>
-        <div className="card">
-          <Database size={20} className="card-icon" />
-          <span className="card-label">Datos</span>
-          <strong className="card-value">{{ project.database }}</strong>
+        <div className="kpi-card">
+          <span className="kpi-label">API</span>
+          <span className="kpi-value">{apiStatus}</span>
         </div>
 {% endif %}
-{% if include_login %}
-        <div className="card">
-          <ShieldCheck size={20} className="card-icon" />
-          <span className="card-label">Acceso</span>
-          <strong className="card-value">{{ project.auth }}</strong>
+        <div className="kpi-card">
+          <span className="kpi-label">Módulos</span>
+          <span className="kpi-value">{{ modules | length }}</span>
         </div>
-{% else %}
-        <div className="card">
-          <ShieldCheck size={20} className="card-icon" />
-          <span className="card-label">Acceso</span>
-          <strong className="card-value">publico</strong>
-        </div>
-{% endif %}
 {% if include_services %}
-        <div className="card">
-          <Server size={20} className="card-icon" />
-          <span className="card-label">Servicios</span>
-          <strong className="card-value">{{ service_count }}</strong>
+        <div className="kpi-card">
+          <span className="kpi-label">Servicios</span>
+          <span className="kpi-value">{{ service_count }}</span>
         </div>
 {% endif %}
+        <div className="kpi-card">
+          <span className="kpi-label">Roles</span>
+          <span className="kpi-value">{{ role_labels | length }}</span>
+        </div>
       </div>
 
-      <section className="module-grid" aria-label="Módulos del proyecto">
-        {modules.map((module) => (
-          <article className="module-card" key={module.slug}>
+      <section className="module-grid" aria-label="Módulos">
+        {MODULES.map((m) => (
+          <article className="module-card" key={m.slug}>
             <Layers size={18} className="card-icon" />
-            <span>{module.slug}</span>
-            <h3>{module.label}</h3>
-            <p>Base funcional preparada para extender esta parte del producto.</p>
+            <h3>{m.label}</h3>
+{% if has_backend %}
+            <p className="kpi-value">{counts[m.slug] ?? '…'} registros</p>
+{% endif %}
+            <div className="card-actions">
+              <Link to={`/app/module/${m.slug}`} className="btn-primary">
+{% if experience_mode == "admin" %}
+                Gestionar
+{% else %}
+                Ver
+{% endif %}
+              </Link>
+            </div>
           </article>
         ))}
       </section>
 
-      <section className="settings-panel">
-        <dl className="settings-list">
-          <div>
-            <dt>Navegación</dt>
-            <dd>{{ navigation_layout }}</dd>
-          </div>
-          <div>
-            <dt>Acceso</dt>
-            <dd>{{ "admin directo" if experience_mode == "admin" else "portal + admin" }}</dd>
-          </div>
-          <div>
-            <dt>Panel admin</dt>
-            <dd>{{ "operations workspace" if admin_style == "operations" else "business control" }}</dd>
-          </div>
-{% if include_login %}
-          <div>
-            <dt>Login</dt>
-            <dd>{{ "editorial" if login_variant == "ibm-classic" else "operations console" if login_variant == "digital-workers" else "client portal" }}</dd>
-          </div>
+{% else %}
+      <section className="module-table-section" aria-label="Módulos">
+{% if has_backend %}
+        <p className="api-status">API: {apiStatus}</p>
 {% endif %}
-          <div>
-            <dt>Cloud</dt>
-            <dd>{{ cloud_label }}</dd>
-          </div>
-          <div>
-            <dt>Roles</dt>
-            <dd>{roles.join(', ')}</dd>
-          </div>
-          <div>
-            <dt>Contenedores</dt>
-            <dd>{{ containers | join(", ") }}</dd>
-          </div>
-          <div>
-            <dt>Scripts</dt>
-            <dd>{{ "dev.sh / setup.sh" if include_dev_script else "sin script local" }}</dd>
-          </div>
-        </dl>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Módulo</th>
+{% if has_backend %}
+              <th>Registros</th>
+{% endif %}
+              <th aria-label="acciones" />
+            </tr>
+          </thead>
+          <tbody>
+            {MODULES.map((m) => (
+              <tr key={m.slug}>
+                <td>
+                  <Layers size={14} className="card-icon" />
+                  {m.label}
+                </td>
+{% if has_backend %}
+                <td>{counts[m.slug] ?? '…'}</td>
+{% endif %}
+                <td className="row-actions">
+                  <Link to={`/app/module/${m.slug}`} className="btn-ghost">
+{% if experience_mode == "admin" %}
+                    Gestionar
+{% else %}
+                    Ver
+{% endif %}
+                  </Link>
+{% if experience_mode == "admin" %}
+                  <Link to={`/app/module/${m.slug}`} className="btn-primary">
+                    <Plus size={14} /> Nuevo
+                  </Link>
+{% endif %}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
+{% endif %}
     </div>
   );
 }

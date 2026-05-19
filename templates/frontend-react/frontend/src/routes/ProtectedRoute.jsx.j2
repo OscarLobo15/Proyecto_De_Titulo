@@ -1,17 +1,47 @@
+import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
+const ALLOWED_ROLES = {{ role_labels | tojson }};
+
 export function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
+  const [roleChecked, setRoleChecked] = useState(false);
+  const [hasRole, setHasRole] = useState(false);
 
-  if (loading) {
-    return <main className="center-screen">Cargando sesion...</main>;
+  useEffect(() => {
+    if (!user) {
+      setRoleChecked(true);
+      return;
+    }
+    user
+      .getIdTokenResult()
+      .then((result) => {
+        const role = result.claims.role;
+        setHasRole(!role || ALLOWED_ROLES.includes(role));
+        setRoleChecked(true);
+      })
+      .catch(() => {
+        setHasRole(true);
+        setRoleChecked(true);
+      });
+  }, [user]);
+
+  if (loading || !roleChecked) {
+    return <main className="center-screen">Cargando sesión...</main>;
   }
 
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
+  if (!hasRole) {
+    return (
+      <main className="center-screen">
+        <p>Acceso restringido. Tu cuenta no tiene permisos para esta aplicación.</p>
+      </main>
+    );
+  }
+
   return children;
 }
-

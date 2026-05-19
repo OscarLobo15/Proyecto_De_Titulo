@@ -6,6 +6,9 @@ from app.routes import health
 {% if project.auth != "none" %}
 from app.routes import auth, users
 {% endif %}
+{% if has_backend and modules %}
+from app.routes import modules as modules_router
+{% endif %}
 
 app = FastAPI(title="{{ project_title }} API", version="0.1.0")
 
@@ -21,4 +24,7 @@ app.include_router(health.router)
 {% if project.auth != "none" %}
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(users.router, prefix="/users", tags=["users"])
+{% endif %}
+{% if has_backend and modules %}
+app.include_router(modules_router.router, prefix="/api", tags=["modules"])
 {% endif %}

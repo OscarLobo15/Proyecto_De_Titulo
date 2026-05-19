@@ -1,0 +1,55 @@
+from typing import Any
+import uuid
+
+from fastapi import APIRouter, HTTPException
+
+router = APIRouter(tags=["modules"])
+
+# In-memory store — replace with real DB persistence once your schema is defined
+_store: dict[str, list[dict[str, Any]]] = {
+{% for module in modules %}
+    "{{ module.slug }}": [],
+{% endfor %}
+}
+
+{% for module in modules %}
+{% set fn = module.slug | replace('-', '_') %}
+# ── {{ module.label }} ─────────────────────────────────────────────────────
+
+
+@router.get("/{{ module.slug }}", summary="List {{ module.label }}")
+def list_{{ fn }}() -> list[dict[str, Any]]:
+    return _store["{{ module.slug }}"]
+
+
+@router.get("/{{ module.slug }}/{item_id}", summary="Get {{ module.label }} by id")
+def get_{{ fn }}(item_id: str) -> dict[str, Any]:
+    item = next((i for i in _store["{{ module.slug }}"] if i.get("id") == item_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="{{ module.label }} item not found")
+    return item
+
+
+@router.post("/{{ module.slug }}", status_code=201, summary="Create {{ module.label }}")
+def create_{{ fn }}(payload: dict[str, Any]) -> dict[str, Any]:
+    payload["id"] = str(uuid.uuid4())
+    _store["{{ module.slug }}"].append(payload)
+    return payload
+
+
+@router.put("/{{ module.slug }}/{item_id}", summary="Update {{ module.label }}")
+def update_{{ fn }}(item_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    for idx, item in enumerate(_store["{{ module.slug }}"]):
+        if item.get("id") == item_id:
+            payload["id"] = item_id
+            _store["{{ module.slug }}"][idx] = payload
+            return payload
+    raise HTTPException(status_code=404, detail="{{ module.label }} item not found")
+
+
+@router.delete("/{{ module.slug }}/{item_id}", status_code=204, summary="Delete {{ module.label }}")
+def delete_{{ fn }}(item_id: str) -> None:
+    _store["{{ module.slug }}"][:] = [
+        i for i in _store["{{ module.slug }}"] if i.get("id") != item_id
+    ]
+{% endfor %}

@@ -12,8 +12,12 @@ export function Login() {
   const [password, setPassword] = useState('password123');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+{% if experience_mode != "admin" %}
   const [mode, setMode] = useState('login');
   const isRegister = mode === 'register';
+{% else %}
+  const isRegister = false;
+{% endif %}
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -68,9 +72,11 @@ export function Login() {
           />
           {error && <p className="error">{error}</p>}
           <Button disabled={submitting}>{submitting ? 'Procesando...' : isRegister ? 'Crear cuenta y continuar' : 'Continuar'}</Button>
+{% if experience_mode != "admin" %}
           <button className="text-link auth-switch-button" type="button" onClick={() => setMode(isRegister ? 'login' : 'register')}>
             {isRegister ? 'Ya tengo acceso' : 'Registrarme'}
           </button>
+{% endif %}
         </form>
       </div>
     </main>
@@ -105,9 +111,11 @@ export function Login() {
           />
           {error && <p className="error">{error}</p>}
           <Button disabled={submitting}>{submitting ? 'Procesando...' : isRegister ? 'Crear cuenta y continuar' : 'Continuar'}</Button>
+{% if experience_mode != "admin" %}
           <button className="text-link auth-switch-button" type="button" onClick={() => setMode(isRegister ? 'login' : 'register')}>
             {isRegister ? 'Ya tengo una cuenta' : 'Registrarme'}
           </button>
+{% endif %}
         </form>
       </div>
     </main>
@@ -140,9 +148,11 @@ export function Login() {
         />
         {error && <p className="error">{error}</p>}
         <Button disabled={submitting}>{submitting ? 'Procesando...' : isRegister ? 'Crear cuenta y continuar' : 'Continuar'}</Button>
+{% if experience_mode != "admin" %}
         <button className="text-link auth-switch-button" type="button" onClick={() => setMode(isRegister ? 'login' : 'register')}>
           {isRegister ? 'Ya tengo una cuenta' : 'Registrarme'}
         </button>
+{% endif %}
       </form>
     </main>
   );

@@ -3,7 +3,9 @@ import json
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+import io
+
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,9 +29,23 @@ from app.models import (
 from app.options import OPTIONS
 from app.services.ai_client import AIConfigurationError, AIRemoteServiceError
 
+try:
+    import fitz
+except ImportError:  # pragma: no cover - optional runtime dependency
+    fitz = None
+
+try:
+    import pdfplumber
+except ImportError:  # pragma: no cover - optional fallback dependency
+    pdfplumber = None
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Reference Architecture Generator API", version="1.0.0")
+
+MAX_PDF_UPLOAD_BYTES = 15 * 1024 * 1024
+MAX_PDF_PAGES_TO_EXTRACT = 80
+MAX_PDF_TEXT_CHARS = 200000
 
 app.add_middleware(
     CORSMiddleware,
@@ -145,7 +161,7 @@ def ai_generate_project(request: AIGenerateProjectRequest) -> AIGenerateProjectR
 @app.post("/api/ai/plan-project", response_model=PlanProjectResponse)
 def plan_project(request: PlanProjectRequest) -> PlanProjectResponse:
     try:
-        plan = plan_project_with_ai(
+        resolved_name, plan = plan_project_with_ai(
             description=request.description,
             project_name=request.project_name,
             selected_architecture=request.selected_architecture,
@@ -160,7 +176,115 @@ def plan_project(request: PlanProjectRequest) -> PlanProjectResponse:
         logger.exception("Unexpected error in plan-project: %s", exc)
         raise HTTPException(status_code=500, detail=f"Error generando el plan IBM: {exc}") from exc
 
-    return PlanProjectResponse(success=True, project_name=request.project_name, plan=plan)
+    return PlanProjectResponse(success=True, project_name=resolved_name, plan=plan)
+
+
+@app.post("/api/ai/extract-pdf")
+async def extract_pdf(file: UploadFile = File(...)):
+    is_pdf = file.content_type == "application/pdf" or (file.filename or "").lower().endswith(".pdf")
+    if not is_pdf:
+        raise HTTPException(status_code=400, detail="El archivo debe ser un PDF.")
+    contents = await file.read()
+    if len(contents) > MAX_PDF_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="El PDF supera el maximo permitido de 15 MB.")
+
+    try:
+        extraction = _extract_pdf_text(contents)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"No fue posible extraer texto del PDF: {exc}") from exc
+
+    text = extraction["text"]
+    if not text.strip():
+        raise HTTPException(status_code=422, detail="El PDF no contiene texto extraíble. Asegúrese de que el archivo no sea una imagen escaneada.")
+    return {
+        "text": text.strip(),
+        "file_name": file.filename,
+        "page_count": extraction["page_count"],
+        "extracted_pages": extraction["extracted_pages"],
+        "character_count": len(text.strip()),
+        "truncated": extraction["truncated"],
+        "extractor": extraction["extractor"],
+    }
+
+
+def _extract_pdf_text(contents: bytes) -> dict:
+    if fitz is not None:
+        return _extract_pdf_text_with_pymupdf(contents)
+
+    if pdfplumber is not None:
+        return _extract_pdf_text_with_pdfplumber(contents)
+
+    raise RuntimeError("No hay extractor PDF disponible. Instale PyMuPDF o pdfplumber.")
+
+
+def _append_pdf_text_chunk(chunks: list[str], page_text: str, total_chars: int) -> tuple[int, bool]:
+    remaining_chars = MAX_PDF_TEXT_CHARS - total_chars
+    if remaining_chars <= 0:
+        return total_chars, True
+
+    if len(page_text) > remaining_chars:
+        chunks.append(page_text[:remaining_chars])
+        return total_chars + remaining_chars, True
+
+    chunks.append(page_text)
+    return total_chars + len(page_text), False
+
+
+def _extract_pdf_text_with_pymupdf(contents: bytes) -> dict:
+    document = fitz.open(stream=contents, filetype="pdf")
+    try:
+        page_count = document.page_count
+        extracted_pages = min(page_count, MAX_PDF_PAGES_TO_EXTRACT)
+        chunks: list[str] = []
+        total_chars = 0
+        truncated = page_count > MAX_PDF_PAGES_TO_EXTRACT
+
+        for page_index in range(extracted_pages):
+            page_text = document.load_page(page_index).get_text("text") or ""
+            if not page_text:
+                continue
+
+            total_chars, reached_limit = _append_pdf_text_chunk(chunks, page_text, total_chars)
+            if reached_limit:
+                truncated = True
+                break
+
+        return {
+            "text": "\n".join(chunks),
+            "page_count": page_count,
+            "extracted_pages": extracted_pages,
+            "truncated": truncated,
+            "extractor": "pymupdf",
+        }
+    finally:
+        document.close()
+
+
+def _extract_pdf_text_with_pdfplumber(contents: bytes) -> dict:
+    with pdfplumber.open(io.BytesIO(contents)) as pdf:
+        page_count = len(pdf.pages)
+        extracted_pages = min(page_count, MAX_PDF_PAGES_TO_EXTRACT)
+        chunks: list[str] = []
+        total_chars = 0
+        truncated = page_count > MAX_PDF_PAGES_TO_EXTRACT
+
+        for page in pdf.pages[:extracted_pages]:
+            page_text = page.extract_text() or ""
+            if not page_text:
+                continue
+
+            total_chars, reached_limit = _append_pdf_text_chunk(chunks, page_text, total_chars)
+            if reached_limit:
+                truncated = True
+                break
+
+        return {
+            "text": "\n".join(chunks),
+            "page_count": page_count,
+            "extracted_pages": extracted_pages,
+            "truncated": truncated,
+            "extractor": "pdfplumber",
+        }
 
 
 @app.get("/install/{token}", response_class=PlainTextResponse)

@@ -29,3 +29,14 @@ export async function planProject(payload) {
   const { data } = await api.post('/api/ai/plan-project', payload, { timeout: 310000 });
   return data;
 }
+
+export async function extractPdf(file, options = {}) {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await api.post('/api/ai/extract-pdf', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: options.onUploadProgress,
+    timeout: 180000,
+  });
+  return data;
+}

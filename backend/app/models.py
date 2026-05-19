@@ -155,8 +155,8 @@ class AnalyzeProjectResponse(BaseModel):
 
 
 class AIGenerateProjectRequest(BaseModel):
-    prompt: str = Field(min_length=1, max_length=12000)
-    project_name: str = Field(min_length=3, max_length=60)
+    prompt: str = Field(min_length=1, max_length=220000)
+    project_name: Optional[str] = Field(default=None, min_length=3, max_length=60)
 
     @field_validator("prompt")
     @classmethod
@@ -166,9 +166,11 @@ class AIGenerateProjectRequest(BaseModel):
             raise ValueError("El prompt no puede estar vacio.")
         return cleaned
 
-    @field_validator("project_name")
+    @field_validator("project_name", mode="before")
     @classmethod
-    def validate_ai_project_name(cls, value: str) -> str:
+    def validate_ai_project_name(cls, value) -> Optional[str]:
+        if value is None or (isinstance(value, str) and value.strip() == ""):
+            return None
         return ProjectConfig.validate_project_name(value)
 
 
@@ -244,6 +246,13 @@ class CostRoleBreakdown(BaseModel):
     total_clp: int = 0
 
 
+class CloudServiceLine(BaseModel):
+    service: str = ""
+    monthly_cost_clp: int = 0
+    setup_cost_clp: int = 0
+    notes: str = ""
+
+
 class CostEstimate(BaseModel):
     currency: str = "CLP"
     project_duration_months: int = 6
@@ -254,6 +263,12 @@ class CostEstimate(BaseModel):
     estimated_savings_clp: int = 0
     savings_percentage: float = 0.0
     methodology_note: str = ""
+    # Cloud infrastructure
+    cloud_provider: str = "local"
+    cloud_services: list[CloudServiceLine] = Field(default_factory=list)
+    cloud_monthly_cost_clp: int = 0
+    cloud_total_cost_clp: int = 0
+    cloud_setup_cost_clp: int = 0
 
 
 class IBMProjectPlan(BaseModel):
@@ -273,8 +288,8 @@ class IBMProjectPlan(BaseModel):
 
 
 class PlanProjectRequest(BaseModel):
-    description: str = Field(min_length=10, max_length=12000)
-    project_name: str = Field(min_length=3, max_length=60)
+    description: str = Field(min_length=10, max_length=220000)
+    project_name: Optional[str] = Field(default=None, min_length=3, max_length=60)
     selected_architecture: Optional[dict] = None
 
     @field_validator("description")
@@ -285,9 +300,11 @@ class PlanProjectRequest(BaseModel):
             raise ValueError("La descripcion no puede estar vacia.")
         return cleaned
 
-    @field_validator("project_name")
+    @field_validator("project_name", mode="before")
     @classmethod
-    def validate_plan_project_name(cls, value: str) -> str:
+    def validate_plan_project_name(cls, value) -> Optional[str]:
+        if value is None or (isinstance(value, str) and value.strip() == ""):
+            return None
         return ProjectConfig.validate_project_name(value)
 
 

@@ -17,14 +17,16 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDollarSign,
+  Cloud,
   Cpu,
   FileText,
   Layers,
   Loader2,
+  Printer,
   Shield,
   Users,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -33,6 +35,29 @@ const fmtCLP = (n) =>
   typeof n === 'number'
     ? `$${n.toLocaleString('es-CL')} CLP`
     : '—';
+
+const labelSeniority = (value) => ({
+  Senior: 'Senior',
+  Mid: 'Semi senior',
+  Junior: 'Junior',
+}[value] || value || '—');
+
+const labelPriority = (value) => ({
+  'Must Have': 'Debe tener',
+  'Should Have': 'Debería tener',
+  'Could Have': 'Podría tener',
+}[value] || value || '—');
+
+const labelStatus = (value) => ({
+  Accepted: 'Aceptada',
+  Proposed: 'Propuesta',
+  Deprecated: 'Obsoleta',
+}[value] || value || '—');
+
+const labelJourney = (value) => ({
+  Delivery: 'Entrega',
+  Solutioning: 'Definición de solución',
+}[value] || value || '—');
 
 const PRIORITY_COLORS = {
   'Must Have':    { bg: '#161616', text: '#ff6b6b', border: '#ff6b6b' },
@@ -92,14 +117,14 @@ function MethodCard({ plan }) {
           <span className="ibm-badge-sl">{plan.service_line}</span>
           {plan.adoption_journey && (
             <span className="ibm-badge-journey" style={{ borderColor: journeyColor, color: journeyColor }}>
-              {plan.adoption_journey} Journey
+              Viaje de {labelJourney(plan.adoption_journey)}
             </span>
           )}
         </div>
         <p className="ibm-method-rationale">{plan.ibm_method_rationale}</p>
         {plan.tailoring_notes && (
           <p className="ibm-method-tailoring">
-            <strong>Tailoring:</strong> {plan.tailoring_notes}
+            <strong>Ajuste metodológico:</strong> {plan.tailoring_notes}
           </p>
         )}
         <hr className="ibm-divider" />
@@ -108,7 +133,7 @@ function MethodCard({ plan }) {
         {plan.ibm_assets_recommended?.length > 0 && (
           <div style={{ marginTop: 16 }}>
             <span style={{ fontSize: '0.75rem', color: '#8d8d8d', textTransform: 'uppercase', letterSpacing: 1 }}>
-              IBM Assets Recomendados
+              Activos IBM recomendados
             </span>
             <div className="ibm-tags" style={{ marginTop: 6 }}>
               {plan.ibm_assets_recommended.map((a, i) => (
@@ -137,8 +162,8 @@ function TeamRolesSection({ roles }) {
           <thead>
             <tr>
               <th>Rol</th>
-              <th>IBM Method Workspace Role</th>
-              <th>Seniority</th>
+              <th>Rol IBM Method Workspace</th>
+              <th>Experiencia</th>
               <th>Fase</th>
               <th>Semanas</th>
               <th>Tarifa/mes</th>
@@ -152,11 +177,11 @@ function TeamRolesSection({ roles }) {
                 <td style={{ fontSize: '0.82rem', color: '#c6c6c6' }}>{r.ibm_method_workspace_role}</td>
                 <td>
                   <span className={`ibm-seniority ${r.seniority?.toLowerCase()}`}>
-                    {r.seniority}
+                    {labelSeniority(r.seniority)}
                   </span>
                 </td>
                 <td style={{ fontSize: '0.82rem' }}>{r.phase}</td>
-                <td style={{ textAlign: 'center', fontWeight: 600 }}>{r.dedication_weeks}w</td>
+                <td style={{ textAlign: 'center', fontWeight: 600 }}>{r.dedication_weeks} sem.</td>
                 <td style={{ color: '#42be65', fontWeight: 600 }}>{fmtCLP(r.monthly_rate_clp)}</td>
                 <td style={{ fontSize: '0.8rem', color: '#a8a8a8', maxWidth: 200 }}>{r.justification}</td>
               </tr>
@@ -191,7 +216,7 @@ function WBSSection({ phases }) {
               <span className="ibm-wbs-phase-num">Fase {i + 1}</span>
               <span className="ibm-wbs-phase-name">{phase.phase_name}</span>
               <span className="ibm-wbs-ibm-phase">({phase.ibm_method_phase})</span>
-              <span className="ibm-wbs-duration">{phase.duration_weeks}w</span>
+              <span className="ibm-wbs-duration">{phase.duration_weeks} sem.</span>
               <span className="ibm-wbs-chevron">
                 {open.has(i) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
               </span>
@@ -216,7 +241,7 @@ function WBSSection({ phases }) {
                           <tr key={j}>
                             <td>{t.task}</td>
                             <td style={{ color: '#78c1e8' }}>{t.responsible_role}</td>
-                            <td style={{ textAlign: 'center' }}>{t.effort_days}d</td>
+                            <td style={{ textAlign: 'center' }}>{t.effort_days} días</td>
                           </tr>
                         ))}
                       </tbody>
@@ -256,7 +281,7 @@ function UserStoriesSection({ stories }) {
   return (
     <section className="ibm-plan-section">
       <h3 className="ibm-plan-section-title">
-        <BookOpen size={18} /> User Stories — AD-Agile Format
+        <BookOpen size={18} /> Historias de Usuario — Formato AD-Agile
       </h3>
       {Object.entries(byEpic).map(([epic, epicStories]) => (
         <div key={epic} className="ibm-epic">
@@ -269,7 +294,7 @@ function UserStoriesSection({ stories }) {
                   <div className="ibm-story-header">
                     <span className="ibm-story-id">{s.id}</span>
                     <span className="ibm-priority-badge" style={{ background: pc.bg, color: pc.text, borderColor: pc.border }}>
-                      {s.priority}
+                      {labelPriority(s.priority)}
                     </span>
                     <span className="ibm-story-points" style={{ background: SP_COLOR(s.story_points) }}>
                       {s.story_points} pts
@@ -311,7 +336,7 @@ function ADRSection({ adrs }) {
   return (
     <section className="ibm-plan-section">
       <h3 className="ibm-plan-section-title">
-        <Shield size={18} /> Architecture Decision Records (ADR)
+        <Shield size={18} /> Registros de Decisión Arquitectónica (ADR)
       </h3>
       <div className="ibm-adrs">
         {adrs.map((adr, i) => (
@@ -320,7 +345,7 @@ function ADRSection({ adrs }) {
               <span className="ibm-adr-id">{adr.id}</span>
               <span className="ibm-adr-title">{adr.title}</span>
               <span className="ibm-adr-status" style={{ color: statusColor[adr.status] || '#78c1e8' }}>
-                {adr.status}
+                {labelStatus(adr.status)}
               </span>
               {open.has(i) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
             </button>
@@ -360,8 +385,15 @@ function ADRSection({ adrs }) {
 // ---------------------------------------------------------------------------
 // Section: Cost Estimate
 // ---------------------------------------------------------------------------
+const PROVIDER_LABEL = { gcp: 'Google Cloud (GCP)', aws: 'Amazon Web Services (AWS)', azure: 'Microsoft Azure', local: 'Infraestructura Local' };
+
 function CostEstimateSection({ cost }) {
   if (!cost) return null;
+
+  const laborTotal = cost.roles_breakdown?.reduce((s, r) => s + (r.total_clp ?? 0), 0) ?? 0;
+  const hasCloud = cost.cloud_services?.length > 0;
+  const providerLabel = PROVIDER_LABEL[cost.cloud_provider?.toLowerCase()] ?? cost.cloud_provider ?? 'Local';
+
   return (
     <section className="ibm-plan-section">
       <h3 className="ibm-plan-section-title">
@@ -393,11 +425,12 @@ function CostEstimateSection({ cost }) {
       {/* Roles breakdown */}
       {cost.roles_breakdown?.length > 0 && (
         <div className="ibm-table-wrap" style={{ marginTop: 20 }}>
+          <p className="ibm-cost-subsection-title"><Users size={14} /> Equipo — Mano de Obra</p>
           <table className="ibm-table">
             <thead>
               <tr>
                 <th>Rol</th>
-                <th>Seniority</th>
+                <th>Experiencia</th>
                 <th>Tarifa/mes</th>
                 <th>Duración (meses)</th>
                 <th>Total CLP</th>
@@ -407,20 +440,70 @@ function CostEstimateSection({ cost }) {
               {cost.roles_breakdown.map((r, i) => (
                 <tr key={i}>
                   <td style={{ fontWeight: 500 }}>{r.role_name}</td>
-                  <td><span className={`ibm-seniority ${r.seniority?.toLowerCase()}`}>{r.seniority}</span></td>
+                  <td><span className={`ibm-seniority ${r.seniority?.toLowerCase()}`}>{labelSeniority(r.seniority)}</span></td>
                   <td>{fmtCLP(r.monthly_rate_clp)}</td>
-                  <td style={{ textAlign: 'center' }}>{r.duration_months}m</td>
+                  <td style={{ textAlign: 'center' }}>{r.duration_months} meses</td>
                   <td style={{ color: '#42be65', fontWeight: 600 }}>{fmtCLP(r.total_clp)}</td>
                 </tr>
               ))}
-              <tr className="ibm-table-total">
-                <td colSpan={4} style={{ textAlign: 'right', fontWeight: 700 }}>TOTAL PROYECTO ({cost.project_duration_months} meses)</td>
-                <td style={{ color: '#f4c430', fontWeight: 700, fontSize: '1.05rem' }}>{fmtCLP(cost.total_project_cost_clp)}</td>
+              <tr className="ibm-table-subtotal">
+                <td colSpan={4} style={{ textAlign: 'right', fontWeight: 600 }}>Subtotal Mano de Obra</td>
+                <td style={{ color: '#42be65', fontWeight: 700 }}>{fmtCLP(laborTotal)}</td>
               </tr>
             </tbody>
           </table>
         </div>
       )}
+
+      {/* Cloud infrastructure breakdown */}
+      {hasCloud && (
+        <div className="ibm-table-wrap" style={{ marginTop: 20 }}>
+          <p className="ibm-cost-subsection-title">
+            <Cloud size={14} /> Infraestructura Cloud —&nbsp;
+            <span className="ibm-cloud-provider-badge">{providerLabel}</span>
+          </p>
+          <table className="ibm-table">
+            <thead>
+              <tr>
+                <th>Servicio</th>
+                <th>Costo mensual</th>
+                <th>Duración (meses)</th>
+                <th>Setup único</th>
+                <th>Total CLP</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cost.cloud_services.map((svc, i) => {
+                const runTotal = (svc.monthly_cost_clp ?? 0) * (cost.project_duration_months ?? 6);
+                return (
+                  <tr key={i}>
+                    <td style={{ fontWeight: 500 }}>{svc.service}</td>
+                    <td>{fmtCLP(svc.monthly_cost_clp)}</td>
+                    <td style={{ textAlign: 'center' }}>{cost.project_duration_months} meses</td>
+                    <td>{svc.setup_cost_clp > 0 ? fmtCLP(svc.setup_cost_clp) : '—'}</td>
+                    <td style={{ color: '#78a9ff', fontWeight: 600 }}>{fmtCLP(runTotal + (svc.setup_cost_clp ?? 0))}</td>
+                  </tr>
+                );
+              })}
+              <tr className="ibm-table-subtotal">
+                <td colSpan={4} style={{ textAlign: 'right', fontWeight: 600 }}>
+                  Subtotal Cloud ({fmtCLP(cost.cloud_monthly_cost_clp)}/mes + {fmtCLP(cost.cloud_setup_cost_clp)} setup)
+                </td>
+                <td style={{ color: '#78a9ff', fontWeight: 700 }}>{fmtCLP(cost.cloud_total_cost_clp)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Grand total */}
+      <div className="ibm-grand-total-bar">
+        <span className="ibm-grand-total-label">
+          TOTAL PROYECTO ({cost.project_duration_months} meses)
+          {hasCloud && <span className="ibm-grand-total-breakdown"> Mano de obra + Cloud</span>}
+        </span>
+        <span className="ibm-grand-total-value">{fmtCLP(cost.total_project_cost_clp)}</span>
+      </div>
 
       {cost.methodology_note && (
         <p className="ibm-cost-note">{cost.methodology_note}</p>
@@ -450,12 +533,60 @@ function RisksSection({ risks }) {
 // Main component
 // ---------------------------------------------------------------------------
 export default function IBMProjectPlanView({ plan, status, error, onRetry }) {
+  const planRef = useRef(null);
+
+  function handleExportPdf() {
+    const planNode = planRef.current;
+    if (!planNode) {
+      window.print();
+      return;
+    }
+
+    const printWindow = window.open('', '_blank', 'width=1024,height=768');
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+
+    const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map((node) => node.outerHTML)
+      .join('\n');
+
+    printWindow.document.open();
+    printWindow.document.write(`<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Plan IBM Method Workspace</title>
+  ${styles}
+  <style>
+    @page { size: A4 portrait; margin: 12mm 14mm; }
+    html, body { background: #fff; margin: 0; min-height: 100%; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .ibm-print-button { display: none !important; }
+    .ibm-plan-root { background: #fff !important; color: #161616 !important; width: 100% !important; }
+    .ibm-plan-section, .ibm-wbs-phase, tr { break-inside: avoid; page-break-inside: avoid; }
+    thead { display: table-header-group; }
+  </style>
+</head>
+<body>
+  ${planNode.outerHTML}
+</body>
+</html>`);
+    printWindow.document.close();
+
+    printWindow.onload = () => {
+      printWindow.focus();
+      printWindow.print();
+    };
+  }
+
   if (status === 'loading') return <LoadingState />;
   if (status === 'error') return <ErrorState error={error} onRetry={onRetry} />;
   if (!plan) return null;
 
   return (
-    <div className="ibm-plan-root">
+    <div className="ibm-plan-root" ref={planRef}>
       <div className="ibm-plan-hero">
         <Cpu size={28} />
         <div>
@@ -464,6 +595,15 @@ export default function IBMProjectPlanView({ plan, status, error, onRetry }) {
             Generado por el agente IA con metodología IBM Consulting
           </p>
         </div>
+        <button
+          type="button"
+          className="ibm-print-button"
+          onClick={handleExportPdf}
+          title="Exportar como PDF"
+        >
+          <Printer size={16} />
+          Exportar PDF
+        </button>
       </div>
 
       <MethodCard plan={plan} />

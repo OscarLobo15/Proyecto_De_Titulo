@@ -1,54 +1,89 @@
-import { Activity, Database, Layers, Server } from 'lucide-react';
+import { Activity, Layers{% if include_services %}, Server{% endif %} } from 'lucide-react';
 import { useEffect, useState } from 'react';
-{% if has_backend %}
+import { Link } from 'react-router-dom';
+{% if has_backend and modules %}
+import {
+  getHealth,
+{% for module in modules %}
+{% set camel = module.slug.split('-') | map('capitalize') | join('') %}
+  get{{ camel }}Items,
+{% endfor %}
+} from '../services/api.js';
+{% elif has_backend %}
 import { getHealth } from '../services/api.js';
 {% endif %}
 
+{% if has_backend and modules %}
+const MODULE_LOADERS = {
+{% for module in modules %}
+{% set camel = module.slug.split('-') | map('capitalize') | join('') %}
+  '{{ module.slug }}': get{{ camel }}Items,
+{% endfor %}
+};
+{% endif %}
+
+const MODULES = {{ modules | tojson }};
+const ROLES = {{ role_labels | tojson }};
+
 export function Dashboard() {
-  const modules = {{ modules | tojson }};
-  const roles = {{ role_labels | tojson }};
+{% if has_backend %}
   const [apiStatus, setApiStatus] = useState('checking');
+{% endif %}
+{% if has_backend and modules %}
+  const [counts, setCounts] = useState({});
+  const [totalItems, setTotalItems] = useState(0);
+{% endif %}
 
   useEffect(() => {
 {% if has_backend %}
     getHealth()
-      .then((response) => setApiStatus(response.status))
+      .then((r) => setApiStatus(r.status ?? 'ok'))
       .catch(() => setApiStatus('offline'));
-{% else %}
-    setApiStatus('frontend-only');
+{% endif %}
+{% if has_backend and modules %}
+    const slugs = MODULES.map((m) => m.slug);
+    Promise.allSettled(slugs.map((slug) => MODULE_LOADERS[slug]())).then((results) => {
+      const next = {};
+      let total = 0;
+      results.forEach((r, i) => {
+        const n = r.status === 'fulfilled' ? r.value.length : 0;
+        next[slugs[i]] = r.status === 'fulfilled' ? n : '—';
+        total += n;
+      });
+      setCounts(next);
+      setTotalItems(total);
+    });
 {% endif %}
   }, []);
 
   return (
     <div className="page-stack">
       <div className="page-header">
-        <span className="eyebrow">{{ project_profile }} · {{ "admin directo" if experience_mode == "admin" else "portal + admin" }} · {{ "operations workspace" if admin_style == "operations" else "business control" }}</span>
-        <h2>{{ "Panel admin" if experience_mode == "admin" else "Administración" }}</h2>
-        <p>Resumen visible de la arquitectura seleccionada, la navegación definida y el estado base del MVP generado.</p>
+        <span className="eyebrow">{{ project_profile }}</span>
+        <h2>{{ "Panel admin" if experience_mode == "admin" else "Resumen" }}</h2>
+        <p>Vista general del estado del sistema y los módulos activos.</p>
       </div>
+
       <div className="metrics-grid">
+{% if has_backend %}
         <div className="card">
           <Activity size={20} className="card-icon" />
           <span className="card-label">Estado API</span>
           <strong className="card-value">{apiStatus}</strong>
         </div>
-{% if has_backend %}
-        <div className="card">
-          <Server size={20} className="card-icon" />
-          <span className="card-label">Backend</span>
-          <strong className="card-value">{{ project.backend }}</strong>
-        </div>
-        <div className="card">
-          <Database size={20} className="card-icon" />
-          <span className="card-label">Base de datos</span>
-          <strong className="card-value">{{ project.database }}</strong>
-        </div>
 {% endif %}
         <div className="card">
           <Layers size={20} className="card-icon" />
-          <span className="card-label">Módulos</span>
-          <strong className="card-value">{modules.length}</strong>
+          <span className="card-label">Módulos activos</span>
+          <strong className="card-value">{{ modules | length }}</strong>
         </div>
+{% if has_backend and modules %}
+        <div className="card">
+          <Layers size={20} className="card-icon" />
+          <span className="card-label">Total registros</span>
+          <strong className="card-value">{totalItems}</strong>
+        </div>
+{% endif %}
 {% if include_services %}
         <div className="card">
           <Server size={20} className="card-icon" />
@@ -59,20 +94,51 @@ export function Dashboard() {
         <div className="card">
           <Activity size={20} className="card-icon" />
           <span className="card-label">Roles</span>
-          <strong className="card-value">{roles.length}</strong>
+          <strong className="card-value">{ROLES.length}</strong>
         </div>
       </div>
 
-      <section className="module-grid">
-        {modules.map((module) => (
-          <article className="module-card" key={module.slug}>
+{% if admin_style == "business" %}
+      <section className="module-grid" aria-label="Módulos">
+        {MODULES.map((m) => (
+          <article className="module-card" key={m.slug}>
             <Layers size={18} className="card-icon" />
-            <span>{module.slug}</span>
-            <h3>{module.label}</h3>
-            <p>Visible porque fue incluido en la configuración inicial del proyecto.</p>
+            <h3>{m.label}</h3>
+{% if has_backend %}
+            <p className="kpi-value">{counts[m.slug] ?? '…'} registros</p>
+{% endif %}
+            <Link to={`/app/module/${m.slug}`} className="btn-ghost">Ver módulo</Link>
           </article>
         ))}
       </section>
+{% else %}
+      <section aria-label="Módulos">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Módulo</th>
+{% if has_backend %}
+              <th>Registros</th>
+{% endif %}
+              <th aria-label="acciones" />
+            </tr>
+          </thead>
+          <tbody>
+            {MODULES.map((m) => (
+              <tr key={m.slug}>
+                <td>{m.label}</td>
+{% if has_backend %}
+                <td>{counts[m.slug] ?? '…'}</td>
+{% endif %}
+                <td className="row-actions">
+                  <Link to={`/app/module/${m.slug}`} className="btn-ghost">Ver módulo</Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+{% endif %}
     </div>
   );
 }

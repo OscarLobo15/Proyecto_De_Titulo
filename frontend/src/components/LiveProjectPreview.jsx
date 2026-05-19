@@ -21,16 +21,17 @@ function getRoles(config) {
 }
 
 function getCustomSections(config) {
-  return Array.from(new Set((config.navigation_sections || []).map(slugify).filter(Boolean))).slice(0, 8);
+  return Array.from(new Set((config.navigation_sections || []).map(slugify).filter(Boolean))).slice(0, 12);
 }
 
-function getServiceItems(config, modules) {
+function getServiceItems(config) {
   if (!config.include_services || !config.service_count || config.project_type === 'web') {
     return [];
   }
 
+  const serviceModules = Array.from(new Set((config.functional_modules || config.navigation_sections || []).map(slugify).filter(Boolean)));
   return Array.from({ length: config.service_count }, (_, index) => {
-    const module = modules[index];
+    const module = serviceModules[index];
     const isAgent = config.project_profile === 'ai' && index === 0;
     const key = isAgent ? 'service-agent' : `service-${index + 1}`;
     const label = isAgent
@@ -61,7 +62,7 @@ export function LiveProjectPreview({ config, source = 'manual' }) {
   const hasFrontend = config.project_type !== 'api';
   const roles = useMemo(() => getRoles(config), [config]);
   const customSections = useMemo(() => getCustomSections(config), [config]);
-  const serviceItems = useMemo(() => getServiceItems(config, customSections), [config, customSections]);
+  const serviceItems = useMemo(() => getServiceItems(config), [config]);
   const appEntryView = config.experience_mode === 'admin' ? 'dashboard' : 'workspace';
   const [view, setView] = useState(config.auth === 'none' ? appEntryView : 'login');
   const showAuth = hasFrontend && config.auth !== 'none';

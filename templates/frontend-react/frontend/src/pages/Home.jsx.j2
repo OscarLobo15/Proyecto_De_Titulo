@@ -10,7 +10,7 @@ export function Home() {
         <h1>{{ project_title }}</h1>
         <p>{{ description }}</p>
         <div className="home-actions">
-          <Link to="{% if include_login %}/login{% else %}/app/dashboard{% endif %}">
+          <Link to="{% if include_login %}/login{% else %}{{ primary_route }}{% endif %}">
             <Button>
               Abrir prototipo
               <ArrowRight size={16} />
@@ -39,7 +39,11 @@ export function Home() {
         <article>
           <Bot size={20} className="capability-icon" />
           <h2>Agente IA</h2>
-          <p>Interfaz de chat conectada a Gemini vía LangGraph.</p>
+{% if include_langgraph %}
+          <p>Interfaz de chat conectada a LangGraph con agente en tiempo real.</p>
+{% else %}
+          <p>Interfaz de chat con pipeline de IA lista para conectar.</p>
+{% endif %}
         </article>
 {% endif %}
 {% if include_services %}

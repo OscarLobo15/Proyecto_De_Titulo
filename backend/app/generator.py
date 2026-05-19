@@ -1,4 +1,5 @@
 import shutil
+import unicodedata
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -63,6 +64,7 @@ class ProjectGenerator:
             if azure_deploy_script.exists():
                 azure_deploy_script.chmod(0o755)
 
+        self._validate_generated_project(build_dir, context)
         self._zip_directory(build_dir, zip_path, config.project_name)
         shutil.rmtree(build_dir)
         return zip_path
@@ -148,9 +150,9 @@ class ProjectGenerator:
             return True
         if relative_path.name == "Login.jsx" and not context["include_login"]:
             return True
-        if relative_path.name == "Home.jsx":
+        if relative_path.name == "ProtectedRoute.jsx" and not context["include_login"]:
             return True
-        if relative_path.name == "Dashboard.jsx":
+        if relative_path.name == "Home.jsx":
             return True
         if "context" in parts and not context["include_login"]:
             return True
@@ -167,6 +169,43 @@ class ProjectGenerator:
         # target_os == "both": skip nothing, include both .sh and .ps1
         if relative_path.name in ["dev.sh", "dev.ps1", "setup.sh"] and not context["include_dev_script"]:
             return True
+
+        return False
+
+    def _validate_generated_project(self, project_dir: Path, context: dict) -> None:
+        if context["has_frontend"]:
+            self._validate_frontend_imports(project_dir / "frontend" / "src")
+
+    def _validate_frontend_imports(self, src_dir: Path) -> None:
+        if not src_dir.exists():
+            raise ValueError("El frontend generado no contiene frontend/src.")
+
+        import_pattern = re.compile(r"(?:import\s+(?:[\s\S]*?\s+from\s+)?|export\s+[\s\S]*?\s+from\s+)['\"](\.{1,2}/[^'\"]+)['\"]")
+
+        for source_file in src_dir.rglob("*"):
+            if source_file.suffix not in {".js", ".jsx"}:
+                continue
+
+            content = source_file.read_text(encoding="utf-8")
+            for match in import_pattern.finditer(content):
+                import_path = match.group(1)
+                if not self._resolve_frontend_import(source_file.parent, import_path):
+                    relative_source = source_file.relative_to(src_dir.parent)
+                    raise ValueError(
+                        f"Import relativo invalido en {relative_source}: {import_path}"
+                    )
+
+    def _resolve_frontend_import(self, base_dir: Path, import_path: str) -> bool:
+        candidate = (base_dir / import_path).resolve()
+        allowed_suffixes = ["", ".js", ".jsx", ".json", ".css"]
+
+        for suffix in allowed_suffixes:
+            file_candidate = candidate if not suffix else candidate.with_suffix(suffix)
+            if file_candidate.is_file():
+                return True
+
+        if candidate.is_dir():
+            return any((candidate / f"index{suffix}").is_file() for suffix in [".js", ".jsx"])
 
         return False
 
@@ -190,12 +229,14 @@ class ProjectGenerator:
         include_ai_backend = include_ai and has_backend
         include_login = has_frontend and config.auth != "none"
         service_count = config.service_count if has_backend and config.include_services else 0
+        frontend_port = 5174
+        backend_port = 8001
         modules = self._build_modules(config)
         extra_services = [
             {
                 "name": self._service_name_for_index(config, index),
                 "slug": self._service_slug_for_index(config, index),
-                "port": 8001 + index,
+                "port": backend_port + index,
             }
             for index in range(1, service_count + 1)
         ]
@@ -207,7 +248,7 @@ class ProjectGenerator:
                     "label": "Frontend",
                     "service_name": f"{config.project_name}-frontend",
                     "image_name": f"{config.project_name}-frontend",
-                    "port": 5173,
+                    "port": frontend_port,
                     "context": "frontend",
                     "dockerfile": "frontend/Dockerfile",
                     "public": True,
@@ -223,13 +264,13 @@ class ProjectGenerator:
                     "label": "Backend",
                     "service_name": f"{config.project_name}-backend",
                     "image_name": f"{config.project_name}-backend",
-                    "port": 8000,
+                    "port": backend_port,
                     "context": "backend",
                     "dockerfile": "backend/Dockerfile",
                     "public": True,
                     "memory": "1Gi",
                     "cpu": "1",
-                    "env": {"APP_ENV": "production", "API_PORT": "8000"},
+                    "env": {"APP_ENV": "production", "API_PORT": str(backend_port)},
                 }
             )
         for service in extra_services:
@@ -254,8 +295,8 @@ class ProjectGenerator:
             "project_name": config.project_name,
             "project_title": config.project_name.replace("-", " ").title(),
             "description": config.description,
-            "frontend_port": 5173,
-            "backend_port": 8000,
+            "frontend_port": frontend_port,
+            "backend_port": backend_port,
             "database_port": 5432,
             "has_frontend": has_frontend,
             "has_backend": has_backend,
@@ -287,10 +328,16 @@ class ProjectGenerator:
             "experience_mode": config.experience_mode,
             "admin_style": config.admin_style,
             "navigation_sections": self._build_navigation_sections(config),
-            "primary_route": "/app/workspace",
+            "pages": config.pages,
+            "primary_route": self._compute_primary_route(config),
             "extra_services": extra_services,
             "deploy_targets": deploy_targets,
         }
+
+    @staticmethod
+    def _slugify(text: str) -> str:
+        normalized = unicodedata.normalize("NFD", text).encode("ascii", "ignore").decode("ascii")
+        return re.sub(r"[^a-z0-9]+", "-", normalized.strip().lower()).strip("-")
 
     def _cloud_label(self, cloud: str) -> str:
         return {
@@ -305,28 +352,38 @@ class ProjectGenerator:
         modules = []
         for module in source_modules:
             label = module.strip().replace("-", " ").title()
-            slug = re.sub(r"[^a-z0-9]+", "-", module.strip().lower()).strip("-")
+            slug = self._slugify(module)
             if slug and slug not in [item["slug"] for item in modules]:
                 modules.append({"slug": slug, "label": label})
-        return modules[:8] or [{"slug": "operaciones", "label": "Operaciones"}]
+        return modules[:12] or [{"slug": "operaciones", "label": "Operaciones"}]
 
     def _build_role_labels(self, config: ProjectConfig) -> list[str]:
         source_roles = config.user_roles or ["admin"]
         roles = []
         for role in source_roles:
-            normalized = role.strip().lower()
-            if normalized and normalized not in roles:
-                roles.append(normalized)
+            slug = self._slugify(role)
+            if slug and slug not in roles:
+                roles.append(slug)
         return roles[:8]
 
     def _build_navigation_sections(self, config: ProjectConfig) -> list[dict[str, str]]:
         sections = []
         for section in config.navigation_sections or []:
-            slug = re.sub(r"[^a-z0-9]+", "-", section.strip().lower()).strip("-")
+            slug = self._slugify(section)
             label = section.strip().replace("-", " ").title()
             if slug and slug not in [item["slug"] for item in sections]:
                 sections.append({"slug": slug, "label": label})
-        return sections[:8]
+        return sections[:12]
+
+    def _compute_primary_route(self, config: ProjectConfig) -> str:
+        pages = config.pages or ["workspace"]
+        for page in ["workspace", "dashboard"]:
+            if page in pages:
+                return f"/app/{page}"
+        for page in pages:
+            if page not in ("login", "not-found"):
+                return f"/app/{page}"
+        return "/app/workspace"
 
     def _service_name_for_index(self, config: ProjectConfig, index: int) -> str:
         modules = self._build_modules(config)
@@ -337,6 +394,6 @@ class ProjectGenerator:
         return f"Service {index}"
 
     def _service_slug_for_index(self, config: ProjectConfig, index: int) -> str:
-        name = self._service_name_for_index(config, index).lower()
-        slug = re.sub(r"[^a-z0-9]+", "-", name).strip("-")
+        name = self._service_name_for_index(config, index)
+        slug = self._slugify(name)
         return slug or f"service-{index}"

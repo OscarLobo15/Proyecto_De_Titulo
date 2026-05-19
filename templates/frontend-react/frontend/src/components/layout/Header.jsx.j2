@@ -24,14 +24,18 @@ export function Header() {
 
 {% if navigation_layout == "navbar" %}
       <nav className="topbar-nav" aria-label="Principal">
+{% if "workspace" in pages %}
         <NavLink to="/app/workspace">
           <LayoutDashboard size={16} />
           Workspace
         </NavLink>
+{% endif %}
+{% if "dashboard" in pages %}
         <NavLink to="/app/dashboard">
           <BarChart3 size={16} />
           {{ "Panel admin" if experience_mode == "admin" else "Administración" }}
         </NavLink>
+{% endif %}
         {navigationSections.map((section) => (
           <NavLink key={section.slug} to={`/app/module/${section.slug}`}>
             <FolderKanban size={16} />
@@ -44,10 +48,12 @@ export function Header() {
             {module.label}
           </NavLink>
         ))}
+{% if "settings" in pages %}
         <NavLink to="/app/settings">
           <Settings size={16} />
           Settings
         </NavLink>
+{% endif %}
       </nav>
       <div className="topbar-actions">
         <button className="icon-button" type="button" aria-label="Buscar">

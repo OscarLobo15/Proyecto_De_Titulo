@@ -20,12 +20,15 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
 
 from app.models import (
     ADR,
+    CloudServiceLine,
     CostEstimate,
     CostRoleBreakdown,
     IBMProjectPlan,
@@ -37,6 +40,154 @@ from app.models import (
 from app.services.ai_client import RemoteLLMClient
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_MONTHLY_RATE_CLP = 5_000_000
+MIN_REALISTIC_MONTHLY_RATE_CLP = 2_500_000
+
+ROLE_RATE_TABLE_CLP = {
+    "business sales & delivery leader: associate partner": 11_000_000,
+    "associate partner": 11_000_000,
+    "application architect: hybrid cloud": 8_500_000,
+    "solution architect": 8_500_000,
+    "architect": 8_500_000,
+    "automation architect": 7_500_000,
+    "ai architect": 7_500_000,
+    "client project manager": 7_000_000,
+    "project manager": 7_000_000,
+    "cloud build platform architect": 6_500_000,
+    "application developer: devops": 6_000_000,
+    "devops lead": 6_000_000,
+    "agile coach": 5_500_000,
+    "application developer": 5_000_000,
+    "developer": 5_000_000,
+    "business analyst": 5_000_000,
+    "application architect: quality engineering": 4_500_000,
+    "qa engineer": 4_500_000,
+    "ux designer": 4_500_000,
+    "data architect": 7_000_000,
+    "cybersecurity architect": 7_500_000,
+}
+
+# Cloud infrastructure reference pricing (CLP/month, conservative Chile market estimates)
+# Each entry: [monthly_cost_clp, one_time_setup_cost_clp]
+CLOUD_PRICING_CLP: dict[str, dict[str, list[int]]] = {
+    "gcp": {
+        "Cloud Run / GKE (compute)":        [480_000,  350_000],
+        "Cloud SQL (base de datos)":         [320_000,  200_000],
+        "Cloud Storage (almacenamiento)":    [80_000,   50_000],
+        "Firebase / Identity Platform (auth)": [60_000, 30_000],
+        "Cloud Load Balancing + CDN":        [120_000,  80_000],
+        "Cloud Monitoring & Logging":        [80_000,   0],
+        "Vertex AI (si aplica IA)":          [400_000,  120_000],
+    },
+    "aws": {
+        "ECS / EKS (compute)":              [520_000,  400_000],
+        "RDS (base de datos)":              [340_000,  200_000],
+        "S3 (almacenamiento)":              [75_000,   40_000],
+        "Cognito (auth)":                   [55_000,   30_000],
+        "ALB + CloudFront (CDN)":           [130_000,  80_000],
+        "CloudWatch (monitoreo)":            [90_000,   0],
+        "SageMaker (si aplica IA)":         [450_000,  150_000],
+    },
+    "azure": {
+        "AKS / Container Apps (compute)":   [500_000,  380_000],
+        "Azure SQL / CosmosDB":             [360_000,  220_000],
+        "Blob Storage (almacenamiento)":    [78_000,   40_000],
+        "Azure AD B2C (auth)":              [65_000,   35_000],
+        "Azure Front Door + CDN":           [140_000,  90_000],
+        "Azure Monitor (monitoreo)":        [85_000,   0],
+        "Azure OpenAI Service (si aplica)": [480_000,  130_000],
+    },
+    "local": {},
+}
+
+# Which services to include per project profile
+_CLOUD_PROFILE_SERVICES: dict[str, list[str]] = {
+    "standard":      ["compute", "base de datos", "almacenamiento", "auth", "CDN", "monitoreo"],
+    "ai":            ["compute", "base de datos", "almacenamiento", "auth", "CDN", "monitoreo", "IA"],
+    "microservices": ["compute", "base de datos", "almacenamiento", "CDN", "monitoreo"],
+    "api-only":      ["compute", "base de datos", "monitoreo"],
+}
+
+
+def _select_cloud_services(provider: str, profile: str, has_ai: bool) -> list[dict]:
+    """Pick the relevant cloud service lines for the given provider + project profile."""
+    provider_key = provider.lower() if provider else "local"
+    if provider_key not in CLOUD_PRICING_CLP or not CLOUD_PRICING_CLP[provider_key]:
+        return []
+
+    keywords = _CLOUD_PROFILE_SERVICES.get(profile, _CLOUD_PROFILE_SERVICES["standard"])
+    if has_ai and "IA" not in keywords:
+        keywords = keywords + ["IA"]
+
+    selected = []
+    for service_name, (monthly, setup) in CLOUD_PRICING_CLP[provider_key].items():
+        # Include service if any of its keywords match what this profile needs
+        if any(kw.lower() in service_name.lower() for kw in keywords):
+            selected.append({
+                "service": service_name,
+                "monthly_cost_clp": monthly,
+                "setup_cost_clp": setup,
+                "notes": "",
+            })
+    return selected
+
+
+SPANISH_TERM_MAP = {
+    "Project Manager": "Jefe de Proyecto",
+    "Solution Architect": "Arquitecto de Solución",
+    "Business Analyst": "Analista de Negocio",
+    "Developer": "Desarrollador",
+    "Application Developer": "Desarrollador de Aplicaciones",
+    "DevOps Lead": "Líder DevOps",
+    "QA Engineer": "Especialista QA",
+    "AI Architect": "Arquitecto IA",
+    "Automation Architect": "Arquitecto de Automatización",
+    "UX Designer": "Diseñador UX",
+    "Data Architect": "Arquitecto de Datos",
+    "Cybersecurity Architect": "Arquitecto de Ciberseguridad",
+    "All": "Todo el proyecto",
+    "Iteration 0": "Iteración 0",
+    "Iterations": "Iteraciones",
+    "Iterations 1-n": "Iteraciones 1-n",
+    "Close": "Cierre",
+    "AI Strategy": "Estrategia IA",
+    "AI Build": "Construcción IA",
+    "AI Design": "Diseño IA",
+    "AI Operationalize": "Operacionalización IA",
+    "Architecture Overview": "Resumen de Arquitectura",
+    "Architecture Overview Document": "Documento de Resumen de Arquitectura",
+    "Development Environment": "Entorno de Desarrollo",
+    "Working Software": "Software Funcional",
+    "Sprint Reviews": "Revisiones de Sprint",
+    "Test Reports": "Reportes de Pruebas",
+    "Deployed Application": "Aplicación Desplegada",
+    "User Documentation": "Documentación de Usuario",
+    "Implementation Project Plan": "Plan de Implementación del Proyecto",
+    "Acceptance Test Plan": "Plan de Pruebas de Aceptación",
+    "Configuration Management": "Gestión de Configuración",
+    "Change Management (Agile and Traditional)": "Gestión del Cambio (Ágil y Tradicional)",
+    "AI Use Cases List": "Listado de Casos de Uso IA",
+    "LLM Selection Report": "Informe de Selección de LLM",
+    "AI Agent v1": "Agente IA v1",
+    "Integration Tests": "Pruebas de Integración",
+    "Hybrid Cloud & Data": "Nube Híbrida y Datos",
+    "Application Operations": "Operaciones de Aplicaciones",
+    "Business Applications": "Aplicaciones de Negocio",
+    "Business Operations": "Operaciones de Negocio",
+    "Cybersecurity": "Ciberseguridad",
+    "Strategy & Transformation": "Estrategia y Transformación",
+    "Delivery": "Entrega",
+    "Solutioning": "Definición de solución",
+    "Dashboard": "Tablero",
+    "Setup": "Preparación",
+    "features": "funcionalidades",
+    "scope": "alcance",
+    "stakeholders": "interesados",
+    "Stakeholders": "Interesados",
+    "sign-offs": "aprobaciones",
+    "Sprint planning": "Planificación de sprint",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -64,38 +215,96 @@ def build_project_planning_graph(llm_client: Optional[RemoteLLMClient] = None) -
     graph = StateGraph(ProjectPlanState)
     graph.add_node("receive_plan_request", receive_plan_request)
     graph.add_node("generate_method_and_team", lambda s: generate_method_and_team(s, client))
-    graph.add_node("generate_user_stories", lambda s: generate_user_stories(s, client))
-    graph.add_node("generate_architecture_decisions", lambda s: generate_architecture_decisions(s, client))
+    graph.add_node("generate_plan_artifacts", lambda s: generate_plan_artifacts(s, client))
     graph.add_node("compute_cost_estimate", compute_cost_estimate)
     graph.add_node("assemble_plan", assemble_plan)
 
     graph.set_entry_point("receive_plan_request")
     graph.add_edge("receive_plan_request", "generate_method_and_team")
-    graph.add_edge("generate_method_and_team", "generate_user_stories")
-    graph.add_edge("generate_user_stories", "generate_architecture_decisions")
-    graph.add_edge("generate_architecture_decisions", "compute_cost_estimate")
+    graph.add_edge("generate_method_and_team", "generate_plan_artifacts")
+    graph.add_edge("generate_plan_artifacts", "compute_cost_estimate")
     graph.add_edge("compute_cost_estimate", "assemble_plan")
     graph.add_edge("assemble_plan", END)
     return graph.compile()
 
 
+def _extract_name_from_text(text: str) -> Optional[str]:
+    m = re.search(
+        r'["“”«»]([A-Za-zà-ÿ][A-Za-zà-ÿ0-9\s\-]{2,40})["“”«»]',
+        text,
+    )
+    if m:
+        return m.group(1).strip()
+    m = re.search(
+        r'\b(?:llamad[ao]|se llama)\s+([A-ZÀ-ÖØ-Þ][A-Za-zà-ÿ0-9\-]{2,40})',
+        text,
+    )
+    if m:
+        return m.group(1).strip()
+    m = re.search(
+        r'\b(?:proyecto|sistema|plataforma|aplicaci[oó]n|app|portal|herramienta|software|servicio)\s+([A-ZÀ-ÖØ-Þ][A-Za-zà-ÿ0-9\-]{2,40})',
+        text,
+    )
+    if m:
+        return m.group(1).strip()
+    return None
+
+
+def _slugify_name(name: str) -> str:
+    normalized = unicodedata.normalize("NFD", name)
+    ascii_name = "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")
+    return slug[:60] or "proyecto"
+
+
+def _generate_project_name_with_llm(description: str, client: RemoteLLMClient) -> str:
+    prompt = (
+        "Based on the following project description, generate a short, descriptive project name "
+        "as a slug (lowercase, hyphen-separated, 2-5 words, no accents, no special characters).\n"
+        f"Project description:\n{description[:800]}\n"
+        "Respond with ONLY the slug name, nothing else."
+    )
+    try:
+        raw = client.generate(prompt).strip()
+        first_line = raw.split("\n")[0].strip().strip("\"'").lower()
+        slug = re.sub(r"[^a-z0-9]+", "-", first_line).strip("-")
+        if len(slug) >= 3:
+            return slug[:60]
+    except Exception as exc:
+        logger.warning("LLM name generation failed: %s", exc)
+    return "proyecto-ia"
+
+
+def _resolve_project_name(description: str, project_name: Optional[str], client: RemoteLLMClient) -> str:
+    if project_name and len(project_name.strip()) >= 3:
+        return _slugify_name(project_name.strip())
+    extracted = _extract_name_from_text(description)
+    if extracted:
+        slug = _slugify_name(extracted)
+        if len(slug) >= 3:
+            return slug
+    return _generate_project_name_with_llm(description, client)
+
+
 def plan_project_with_ai(
     description: str,
-    project_name: str,
+    project_name: Optional[str] = None,
     selected_architecture: Optional[dict] = None,
     llm_client: Optional[RemoteLLMClient] = None,
-) -> IBMProjectPlan:
-    logger.info("Starting IBM project planning graph for: %s", project_name)
-    app = build_project_planning_graph(llm_client)
+) -> tuple[str, IBMProjectPlan]:
+    client = llm_client or RemoteLLMClient()
+    resolved_name = _resolve_project_name(description, project_name, client)
+    logger.info("Starting IBM project planning graph for: %s", resolved_name)
+    app = build_project_planning_graph(client)
     final_state = app.invoke({
         "description": description.strip(),
-        "project_name": project_name.strip().lower().replace(" ", "-"),
+        "project_name": resolved_name,
         "selected_architecture": selected_architecture or {},
     })
     plan = final_state.get("plan")
     if not isinstance(plan, IBMProjectPlan):
         raise RuntimeError("El grafo de planificación IBM no produjo un plan válido.")
-    return plan
+    return resolved_name, plan
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +332,9 @@ def generate_method_and_team(state: ProjectPlanState, llm_client: RemoteLLMClien
     if not parsed:
         logger.warning("LLM returned unparseable response for method_and_team; using fallback")
         parsed = _fallback_method_and_team(state)
+    elif _mentions_unrequested_chatbot(parsed, state["description"]):
+        logger.warning("LLM method_and_team invented chatbot scope; using architecture-aware fallback")
+        parsed = _fallback_method_and_team(state)
     return {"method_and_team": parsed}
 
 
@@ -130,13 +342,22 @@ def _build_method_and_team_prompt(state: ProjectPlanState) -> str:
     arch = state.get("selected_architecture") or {}
     arch_summary = json.dumps({k: v for k, v in arch.items() if k in (
         "project_type", "frontend", "backend", "database", "auth",
-        "cloud", "project_profile", "include_langgraph",
+        "cloud", "project_profile", "include_langgraph", "include_services",
+        "service_count", "functional_modules", "navigation_sections", "roles",
+        "microservices", "integrations",
     )}, ensure_ascii=False) if arch else "{}"
+    planning_context = _planning_context_from_arch(arch)
 
     return f"""
-You are a Senior IBM Consulting Solution Architect with full access to the IBM Method Workspace catalogue.
-Your task is to produce a complete IBM delivery plan for a new project engagement.
-Respond ONLY with valid JSON. No markdown, no explanation outside the JSON.
+Eres un Arquitecto Senior de Soluciones de IBM Consulting con acceso completo al catálogo IBM Method Workspace.
+Tu tarea es producir un plan completo de entrega para un nuevo engagement.
+Responde SOLO con JSON válido. No uses markdown ni explicaciones fuera del JSON.
+
+## IDIOMA Y MONEDA
+- Toda la salida visible para usuario debe estar en español: justificaciones, fases, objetivos, tareas, entregables, riesgos, ADRs, historias de usuario y notas.
+- Puedes conservar nombres oficiales de métodos IBM y nombres técnicos propios como React, FastAPI, LangGraph, IBM Method Workspace o ADR.
+- No escribas frases en inglés como "Working Software", "Sprint Reviews", "Accepted", "As a", "I want" ni "so that"; tradúcelas al español.
+- Todos los montos deben estar en CLP mensual. Nunca uses valores por hora, por día ni valores menores a 2_500_000 CLP/mes.
 
 ## IBM METHOD WORKSPACE — COMPLETE METHODS CATALOGUE (37 methods, 7 service lines)
 
@@ -277,16 +498,25 @@ Respond ONLY with valid JSON. No markdown, no explanation outside the JSON.
 - "Application Architect: Quality Engineering": 4_500_000
 - "Application Developer" (Mid) / "Business Analyst" (Mid): 3_500_000
 - "Application Developer" (Junior): 2_500_000
+- IMPORTANT: These are monthly role costs in Chilean pesos. Do not output 300_000, 500_000, hourly values, daily values, UF values or USD values.
 
 ## PROJECT TO PLAN:
 Name: {state["project_name"]}
 Description: {state["description"]}
 Technical architecture selected: {arch_summary}
+Detected delivery scope: {planning_context}
 
 ## TASK:
 Using the complete IBM Method Workspace knowledge above, select the single best-fit method
 and produce the full delivery plan. The method MUST be justified by domain and nature —
 do not default to AD-Agile unless it genuinely fits a custom app dev engagement.
+
+## FIDELITY RULES — CRITICAL:
+- Treat the description and Detected delivery scope as the source of truth. Do not replace it with a generic chatbot, generic task manager, CRM, reservations, payments, or CRUD-user application unless those capabilities are explicitly present.
+- If the project refers to Digital Workers, skills/tasks, human-in-the-loop, orchestration, meetings, documents, OKRs, GRC, governance, risk or compliance, plan for those capabilities directly. Do not summarize them as "chatbot" unless the document explicitly says chatbot.
+- Contract boilerplate, signatures, prices, legal clauses and company names are context, not product modules or end-user roles.
+- When services are detected, the WBS, roles, risks and user stories must cover navigation/operation across those services, not a single monolithic screen.
+- Every phase, risk and deliverable must be traceable to at least one detected capability, role, service or technology in the project context.
 
 ## METHOD SELECTION — PRIORITY RULES (apply in order, first match wins):
 
@@ -346,11 +576,11 @@ Additionally, determine the adoption_journey:
 Respond with this EXACT JSON contract (no extra keys, no markdown):
 {{
   "ibm_recommended_method": "<method name exactly as in the catalogue>",
-  "ibm_method_rationale": "<2-3 sentences explaining why this method fits this specific project>",
+  "ibm_method_rationale": "<3-5 sentences in Spanish fully justifying method selection. MUST: (1) Name the specific IBM Method Workspace attributes (phases, disciplines, or lifecycle) that align with this engagement's nature. (2) Explain WHY this method was chosen over the 2 most plausible alternatives — name those alternatives explicitly and state the disqualifying reason for each. (3) Reference a concrete project characteristic (tech stack, domain, scope, risk) that seals the choice. Do not write generic sentences — every sentence must be evidence-backed and specific to THIS project.>",
   "service_line": "<primary service line abbreviation and name>",
-  "project_overview": "<2-3 sentences describing the project from IBM Consulting perspective>",
+  "project_overview": "<3-4 sentences describing the project from IBM Consulting perspective: business problem, proposed solution approach, expected outcome, and strategic value for the client. Be concrete and specific to this engagement.>",
   "adoption_journey": "Delivery | Solutioning",
-  "tailoring_notes": "<1-2 sentences on how this standard method was adapted for this specific engagement>",
+  "tailoring_notes": "<2-3 sentences describing specifically HOW the selected IBM method was adapted for this engagement. Mention: which standard phases were shortened/extended and why; any discipline overlaps; any IBM work products replaced or supplemented; and how the team composition tailors the method's standard resourcing model. Be specific — do not write generalities.>",
   "team_roles": [
     {{
       "role_name": "<SHORT functional name — e.g. 'Project Manager', 'Solution Architect', 'Developer'>",
@@ -358,8 +588,8 @@ Respond with this EXACT JSON contract (no extra keys, no markdown):
       "seniority": "Senior | Mid | Junior",
       "phase": "<All | specific phase name from the selected method>",
       "dedication_weeks": <integer 1-52>,
-      "monthly_rate_clp": <integer from the rate table above>,
-      "justification": "<1-2 sentences specific to THIS project>"
+      "monthly_rate_clp": <integer from the rate table above; minimum 2_500_000>,
+      "justification": "<2-3 sentences in Spanish specific to THIS project. State: (1) the specific deliverable or phase this role owns, (2) WHY this seniority level is required given project complexity, and (3) how this role integrates with another key role in the team.>"
     }}
   ],
   "wbs_phases": [
@@ -379,20 +609,24 @@ Respond with this EXACT JSON contract (no extra keys, no markdown):
     }}
   ],
   "project_risks": [
-    "<risk specific to this project type and stack — not generic>",
-    "<risk 2>",
-    "<risk 3>",
-    "<risk 4>"
+    "<Risk 1: Name the specific risk tied to THIS stack or domain. Format: '[Risk category]: [What could go wrong] → Mitigation: [concrete IBM Consulting action to reduce it]'>",
+    "<Risk 2 — same format>",
+    "<Risk 3 — same format>",
+    "<Risk 4 — same format>",
+    "<Risk 5 — same format>"
   ],
   "ibm_assets_recommended": [
-    "<IBM Method Workspace work product or asset name>",
+    "<IBM Method Workspace work product or asset name — be specific, e.g. 'Solution Architecture Document (SAD)', 'Iteration Plan', 'Definition of Ready checklist'>",
     "<asset 2>",
     "<asset 3>",
-    "<asset 4>"
+    "<asset 4>",
+    "<asset 5>"
   ]
 }}
 
 CONSTRAINTS:
+- Output language: Spanish for all user-facing text. Keep only official IBM method names and technology names in their original form.
+- monthly_rate_clp must be a realistic monthly CLP cost from the table. Minimum allowed value: 2_500_000.
 - team_roles: 5-7 roles minimum. Every project needs PM + Architect + Developer.
   AI projects require Automation Architect. Data projects require Data Architect.
   QE-focused projects require Application Architect: Quality Engineering.
@@ -400,9 +634,28 @@ CONSTRAINTS:
 - wbs_phases: 3-5 phases using the EXACT phase names from the selected method as listed above.
   Each phase: 3-5 tasks, 2-3 deliverables.
   tasks[].responsible_role MUST exactly match one of the role_name values from team_roles.
-- project_risks: 4-5 risks, each actionable and specific to the project stack/domain.
-- ibm_assets_recommended: 4-6 IBM MW work products relevant to this exact engagement.
+- project_risks: EXACTLY 5 risks. Each risk MUST name a specific technology, team pattern, or domain challenge from THIS project and include a concrete mitigation action. No generic project management risks.
+- ibm_assets_recommended: 4-6 IBM MW work products. Use official IBM Method Workspace asset names.
 """.strip()
+
+
+# ---------------------------------------------------------------------------
+# Node: generate_plan_artifacts  [LLM calls 2 and 3 in parallel]
+# ---------------------------------------------------------------------------
+
+def generate_plan_artifacts(state: ProjectPlanState, llm_client: RemoteLLMClient) -> ProjectPlanState:
+    logger.info("IBM planning node: generate_plan_artifacts")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        stories_future = executor.submit(generate_user_stories, state, llm_client)
+        adrs_future = executor.submit(generate_architecture_decisions, state, llm_client)
+
+        stories_update = stories_future.result()
+        adrs_update = adrs_future.result()
+
+    return {
+        "raw_user_stories": stories_update.get("raw_user_stories", []),
+        "raw_adrs": adrs_update.get("raw_adrs", []),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -418,53 +671,76 @@ def generate_user_stories(state: ProjectPlanState, llm_client: RemoteLLMClient) 
     if not parsed:
         logger.warning("LLM returned unparseable response for user_stories; using fallback")
         parsed = _fallback_user_stories(state)
+    elif _mentions_unrequested_chatbot(parsed, state["description"]):
+        logger.warning("LLM user stories invented chatbot scope; using architecture-aware fallback")
+        parsed = _fallback_user_stories(state)
     return {"raw_user_stories": parsed}
 
 
 def _build_user_stories_prompt(state: ProjectPlanState, mt: dict) -> str:
     roles = [r.get("role_name", "") for r in mt.get("team_roles", [])]
     method = mt.get("ibm_recommended_method", "Application Development - Agile (AD-Agile)")
+    arch = state.get("selected_architecture") or {}
+    tech_summary = _tech_summary_from_arch(arch, state["description"])
+    planning_context = _planning_context_from_arch(arch)
 
     return f"""
-You are an IBM Consulting Business Analyst applying the AD-Agile method.
-Your task is to generate User Stories for an IBM project engagement.
-Respond ONLY with a valid JSON array. No markdown, no explanation outside the JSON.
+Eres un Analista de Negocio de IBM Consulting aplicando el método {method}.
+Tu tarea es generar historias de usuario para un engagement IBM.
+Responde SOLO con un arreglo JSON válido. No uses markdown ni explicaciones fuera del JSON.
+
+## IDIOMA
+- Toda la salida visible debe estar en español.
+- Conserva solo nombres técnicos propios cuando corresponda (React, FastAPI, Firebase, PostgreSQL, etc.).
+- Usa "Como", "quiero" y "para" conceptualmente, pero los campos JSON deben mantenerse con los nombres solicitados.
 
 ## IBM AD-AGILE USER STORY STANDARDS:
 - Format: As a [role], I want [capability], so that [business benefit]
 - Priority uses MoSCoW: "Must Have", "Should Have", "Could Have"
 - Story points follow Fibonacci: 1, 2, 3, 5, 8, 13
 - Each story belongs to an Epic (functional domain)
-- Acceptance criteria must be testable and specific
+- Acceptance criteria must be testable and specific — reference the actual tech stack when relevant
 - Stories must be independent, negotiable, valuable, estimable, small, and testable (INVEST)
 - Avoid technical implementation details in the story text — focus on business value
+- Acceptance criteria CAN and SHOULD reference system behaviors tied to the tech stack (e.g., specific APIs, auth flows, DB operations)
 
 ## PROJECT CONTEXT:
 Name: {state["project_name"]}
 Description: {state["description"]}
 IBM Method: {method}
-Key project team: {", ".join(roles) if roles else "Project Manager, Architect, Developer, Business Analyst"}
+Technology Stack: {tech_summary}
+Detected capabilities/services/roles: {planning_context}
+Key project team: {", ".join(roles) if roles else "Project Manager, Arquitecto, Desarrollador, Analista de Negocio"}
 
-## TASK:
-Generate 8-12 User Stories for this project.
-- Group stories by Epics (functional domains detected from the description)
-- Cover: authentication/access, main functional modules, admin capabilities, reporting/dashboard if relevant
-- Prioritize by MoSCoW: most critical features are "Must Have", enhancements are "Should Have"
-- Make acceptance criteria concrete (3-4 per story)
-- Vary story point estimates realistically (not everything is 5 points)
+## TAREA:
+Genera 8-12 historias de usuario para este proyecto.
+- Agrupa por épicas o módulos funcionales detectados en la descripción.
+- Cubre autenticación/acceso solo si aplica al sistema, módulos principales, operación multi-servicio, capacidades administrativas y reportes/tableros si aplica.
+- Si existen capacidades detectadas en selected_architecture.functional_modules, usa esas capacidades como guía principal de épicas.
+- Si existen service_count o microservices, incluye historias para navegar, monitorear y operar cada servicio detectado desde el preview/plataforma.
+- Prioriza con MoSCoW: usa "Must Have", "Should Have" o "Could Have" solo como valores de prioridad.
+- Los criterios de aceptación deben estar en español, ser concretos, verificables y referir comportamientos del sistema específicos al stack tecnológico detectado.
+- Varía los story points de forma realista según complejidad de implementación en el stack definido.
+
+## CONSTRAINTS OBLIGATORIOS:
+- acceptance_criteria: mínimo 3 criterios por historia. Al menos 1 debe referenciar el comportamiento específico del sistema (ej: "el endpoint POST /api/auth/login devuelve token JWT válido en <2s", "el componente muestra error si Firebase retorna código 401").
+- No repetir épicas con nombres distintos para el mismo módulo funcional.
+- story_points deben ser proporcionales a la complejidad real de implementación en el stack elegido, no uniformes.
+- as_a: usar roles reales del sistema (administrador, usuario final, operador, auditor, etc.) — no "el usuario" genérico.
+- Prohibido inventar una app de chatbot, tareas genéricas, reservas, pagos o gestión de usuarios si no está explícito en el contexto. Para Digital Workers, las historias deben hablar de trabajadores digitales, skills/tasks, validación human-in-the-loop, evidencias/documentos, reuniones, OKRs, orquestación, GRC/riesgo/cumplimiento o capacidades detectadas.
 
 Respond with this exact JSON array:
 [
   {{
     "id": "US-001",
-    "epic": "<epic name matching a functional module>",
-    "as_a": "<user role in the system>",
-    "i_want": "<concrete capability>",
-    "so_that": "<business benefit>",
+    "epic": "<nombre de épica o módulo funcional en español>",
+    "as_a": "<rol específico del sistema en español>",
+    "i_want": "<capacidad concreta en español>",
+    "so_that": "<beneficio de negocio concreto en español>",
     "acceptance_criteria": [
-      "<testable criterion 1>",
-      "<testable criterion 2>",
-      "<testable criterion 3>"
+      "<criterio verificable 1 — comportamiento del sistema con referencia al stack si aplica>",
+      "<criterio verificable 2>",
+      "<criterio verificable 3>"
     ],
     "priority": "Must Have | Should Have | Could Have",
     "story_points": <1|2|3|5|8|13>
@@ -493,11 +769,17 @@ def generate_architecture_decisions(state: ProjectPlanState, llm_client: RemoteL
 def _build_adr_prompt(state: ProjectPlanState, arch: dict, mt: dict) -> str:
     method = mt.get("ibm_recommended_method", "Application Development - Agile (AD-Agile)")
     tech_summary = _tech_summary_from_arch(arch, state["description"])
+    planning_context = _planning_context_from_arch(arch)
 
     return f"""
-You are an IBM Consulting Application Architect documenting Architecture Decision Records (ADRs).
-Your task is to produce ADRs for the key architectural decisions in an IBM project.
-Respond ONLY with a valid JSON array. No markdown, no explanation outside the JSON.
+Eres un Arquitecto de Aplicaciones de IBM Consulting documentando Architecture Decision Records (ADRs).
+Tu tarea es producir ADRs para las decisiones arquitectónicas clave del proyecto.
+Responde SOLO con un arreglo JSON válido. No uses markdown ni explicaciones fuera del JSON.
+
+## IDIOMA
+- Toda la salida visible debe estar en español.
+- Puedes conservar nombres técnicos propios como React, FastAPI, Docker, GCP, LangGraph o ADR.
+- El campo status debe usar "Accepted" o "Proposed" por contrato, pero el resto del contenido debe estar en español.
 
 ## IBM ADR FORMAT (used in IBM Method Workspace):
 - Status: "Accepted" (decisions already made), "Proposed" (under review)
@@ -512,34 +794,42 @@ Project: {state["project_name"]}
 Description: {state["description"]}
 IBM Method: {method}
 Technology Stack: {tech_summary}
+Detected capabilities/services/roles: {planning_context}
 
-## TASK:
-Generate 4-6 Architecture Decision Records for this project.
-Cover the most impactful decisions based on the technology stack detected:
-- Frontend framework decision (if applicable)
-- Backend framework decision (if applicable)
-- Authentication strategy decision (if applicable)
-- Database selection decision (if applicable)
-- Deployment/cloud strategy decision (if applicable)
-- AI/LLM integration approach (if AI is in scope)
+## TAREA:
+Genera 4-6 ADRs para este proyecto.
+Cubre las decisiones de mayor impacto según el stack detectado:
+- Framework frontend si aplica
+- Framework backend si aplica
+- Estrategia de autenticación si aplica
+- Selección de base de datos si aplica
+- Estrategia de despliegue/nube si aplica
+- Enfoque de integración IA/LLM si aplica
 
-Make the ADRs specific to THIS project, not generic. Reference the IBM Method Workspace
-and IBM's recommended patterns where relevant.
+## CONSTRAINTS OBLIGATORIOS:
+- Cada ADR DEBE referenciar la tecnología concreta elegida — nunca escribir "la tecnología seleccionada".
+- Cada ADR debe conectar la decisión técnica con una capacidad real detectada, por ejemplo Digital Workers, orquestación, human-in-the-loop, documentos/evidencias, reuniones, OKRs, GRC/riesgo/cumplimiento o servicios navegables.
+- alternatives_considered: mínimo 2 alternativas reales con nombre de tecnología específico en cada una.
+- rationale: NUNCA escribir "es una buena opción" ni frases genéricas. Cada oración debe referenciar una característica concreta del stack o dominio descrito en el contexto.
+- consequences: SIEMPRE separar con "Pro:" y "Contra:" explícitos.
+- No duplicar ADRs: cada uno cubre una decisión distinta del stack.
+- Prioriza las decisiones de mayor riesgo o mayor impacto arquitectónico para ESTE proyecto.
 
 Respond with this exact JSON array:
 [
   {{
     "id": "ADR-001",
-    "title": "Adopt <technology/pattern> for <purpose>",
+    "title": "Adoptar <tecnología/patrón> para <propósito>",
     "status": "Accepted",
-    "context": "<what problem or decision was required - 2-3 sentences>",
-    "decision": "<what was decided - be specific with technology names>",
-    "rationale": "<why this decision was made from IBM Consulting perspective - 2-3 sentences>",
+    "context": "<problema o decisión requerida - 2-3 oraciones en español>",
+    "decision": "<decisión tomada con nombres de tecnología específicos en español>",
+    "rationale": "<3-4 oraciones en español. DEBE: (1) Citar el atributo técnico principal que hace esta decisión correcta para ESTE proyecto específico (rendimiento, escalabilidad, costo, velocidad de entrega, etc.). (2) Mencionar el patrón o práctica recomendada de IBM Consulting que respalda esta elección. (3) Relacionar la decisión con una característica concreta del stack o dominio del proyecto. No escribir justificaciones genéricas — cada oración debe ser verificable y específica a ESTE engagement.>",
     "alternatives_considered": [
-      "<alternative 1 and why rejected>",
-      "<alternative 2 and why rejected>"
+      "<Alternativa: [nombre específico de tecnología o patrón]. Evaluada porque [razón técnica concreta por la que fue candidata]. Descartada por: [razón técnica específica — nombrar el constraint del proyecto que la elimina, ej: 'requiere licencia Oracle incompatible con presupuesto estimado', 'latencia de cold start incompatible con SLA definido', 'curva de aprendizaje excede capacity del equipo definido'].>",
+      "<Alternativa 2 — mismo formato>",
+      "<Alternativa 3 — mismo formato si aplica>"
     ],
-    "consequences": "<positive and negative consequences - 2-3 sentences>"
+    "consequences": "Pro: <2-3 consecuencias positivas específicas y medibles para ESTE proyecto — nombrar impactos concretos en velocidad de entrega, mantenibilidad, costo operativo o experiencia de usuario>. Contra: <1-2 trade-offs reales que el equipo IBM deberá gestionar — nombrar riesgo técnico o de adopción específico con mitigación sugerida>."
   }}
 ]
 """.strip()
@@ -554,22 +844,25 @@ def compute_cost_estimate(state: ProjectPlanState) -> ProjectPlanState:
     mt = state.get("method_and_team") or {}
     roles = mt.get("team_roles") or []
     wbs = mt.get("wbs_phases") or []
+    arch = state.get("selected_architecture") or {}
 
-    # Project duration = max of all phase durations (weeks), converted to months
+    # Project duration = sum of all phase durations (weeks), converted to months
     total_weeks = sum(p.get("duration_weeks", 0) for p in wbs) or 24
     duration_months = max(round(total_weeks / 4.333, 1), 1.0)
 
+    # ── Labor costs ──────────────────────────────────────────────────────────
     breakdowns: list[CostRoleBreakdown] = []
-    total_clp = 0
+    total_labor_clp = 0
 
     for role in roles:
-        role_name = role.get("role_name", "Role")
+        role_name = _spanish_term(role.get("role_name", "Rol"))
         seniority = role.get("seniority", "Senior")
-        rate = int(role.get("monthly_rate_clp", 5_000_000))
+        rate = _realistic_monthly_rate(role)
+        role["monthly_rate_clp"] = rate
         dedication_weeks = int(role.get("dedication_weeks", 4))
         role_duration_months = round(dedication_weeks / 4.333, 1)
         role_total = round(rate * role_duration_months)
-        total_clp += role_total
+        total_labor_clp += role_total
         breakdowns.append(CostRoleBreakdown(
             role_name=role_name,
             seniority=seniority,
@@ -578,24 +871,42 @@ def compute_cost_estimate(state: ProjectPlanState) -> ProjectPlanState:
             total_clp=role_total,
         ))
 
-    # Setup cost = cost of first 4 weeks across all roles
+    # Setup cost (labor) = first 4 weeks across all roles
     setup_weeks = 4
     setup_cost_without = sum(
-        round(int(r.get("monthly_rate_clp", 5_000_000)) * setup_weeks / 4.333)
+        round(_realistic_monthly_rate(r) * setup_weeks / 4.333)
         for r in roles
     )
-    # With the platform solution, setup is reduced by ~55% (from 4 weeks to ~1.8 weeks)
     setup_cost_with = round(setup_cost_without * 0.45)
     savings = setup_cost_without - setup_cost_with
     savings_pct = round((savings / setup_cost_without * 100), 1) if setup_cost_without else 0.0
 
+    # ── Cloud infrastructure costs ───────────────────────────────────────────
+    cloud_provider = (arch.get("cloud") or "local").lower()
+    project_profile = (arch.get("project_profile") or "standard").lower()
+    has_ai = bool(arch.get("include_langgraph")) or project_profile == "ai"
+
+    raw_services = _select_cloud_services(cloud_provider, project_profile, has_ai)
+    cloud_service_models = [CloudServiceLine(**s) for s in raw_services]
+    cloud_monthly = sum(s.monthly_cost_clp for s in cloud_service_models)
+    cloud_setup = sum(s.setup_cost_clp for s in cloud_service_models)
+    cloud_total = cloud_monthly * round(duration_months) + cloud_setup
+
+    total_project_clp = total_labor_clp + cloud_total
+
     note = (
         f"Estimación basada en {len(roles)} roles IBM Consulting Chile, "
-        f"duración total estimada {duration_months} meses. "
+        f"duración total estimada {round(duration_months)} meses. "
         f"El costo de setup inicial (primeras 4 semanas) se reduce de "
         f"${setup_cost_without:,.0f} a ${setup_cost_with:,.0f} CLP ({savings_pct}% de ahorro) "
-        f"al utilizar la plataforma generadora de arquitecturas IBM."
+        f"al utilizar la plataforma generadora de arquitecturas IBM. "
     )
+    if cloud_provider != "local" and cloud_service_models:
+        note += (
+            f"Infraestructura cloud ({cloud_provider.upper()}): "
+            f"${cloud_monthly:,.0f} CLP/mes + ${cloud_setup:,.0f} CLP de setup inicial "
+            f"= ${cloud_total:,.0f} CLP total en {round(duration_months)} meses."
+        )
 
     plan_state_update: dict = {}
     plan_state_update["method_and_team"] = {
@@ -604,12 +915,17 @@ def compute_cost_estimate(state: ProjectPlanState) -> ProjectPlanState:
             currency="CLP",
             project_duration_months=round(duration_months),
             roles_breakdown=breakdowns,
-            total_project_cost_clp=total_clp,
+            total_project_cost_clp=total_project_clp,
             setup_cost_without_solution_clp=setup_cost_without,
             setup_cost_with_solution_clp=setup_cost_with,
             estimated_savings_clp=savings,
             savings_percentage=savings_pct,
             methodology_note=note,
+            cloud_provider=cloud_provider,
+            cloud_services=cloud_service_models,
+            cloud_monthly_cost_clp=cloud_monthly,
+            cloud_total_cost_clp=cloud_total,
+            cloud_setup_cost_clp=cloud_setup,
         ),
     }
     return plan_state_update
@@ -631,18 +947,18 @@ def assemble_plan(state: ProjectPlanState) -> ProjectPlanState:
 
     plan = IBMProjectPlan(
         ibm_recommended_method=str(mt.get("ibm_recommended_method", "Application Development - Agile (AD-Agile)")),
-        ibm_method_rationale=str(mt.get("ibm_method_rationale", "")),
-        service_line=str(mt.get("service_line", "Hybrid Cloud & Data")),
-        project_overview=str(mt.get("project_overview", state["description"][:180])),
+        ibm_method_rationale=_spanish_term(mt.get("ibm_method_rationale", "")),
+        service_line=_spanish_term(mt.get("service_line", "Hybrid Cloud & Data")),
+        project_overview=_spanish_term(mt.get("project_overview", state["description"][:180])),
         adoption_journey=str(mt.get("adoption_journey", "Delivery")),
-        tailoring_notes=str(mt.get("tailoring_notes", "")),
+        tailoring_notes=_spanish_term(mt.get("tailoring_notes", "")),
         team_roles=team_roles,
         user_stories=user_stories,
         wbs_phases=wbs_phases,
         architecture_decisions=adrs,
         cost_estimate=cost_estimate,
-        project_risks=[str(r) for r in (mt.get("project_risks") or [])],
-        ibm_assets_recommended=[str(a) for a in (mt.get("ibm_assets_recommended") or [])],
+        project_risks=[_spanish_term(r) for r in (mt.get("project_risks") or [])],
+        ibm_assets_recommended=[_spanish_term(a) for a in (mt.get("ibm_assets_recommended") or [])],
     )
     return {"plan": plan}
 
@@ -655,12 +971,12 @@ def _parse_ibm_role(raw: Any) -> IBMRole:
     if not isinstance(raw, dict):
         return IBMRole()
     return IBMRole(
-        role_name=str(raw.get("role_name", "")),
+        role_name=_spanish_term(raw.get("role_name", "")),
         ibm_method_workspace_role=str(raw.get("ibm_method_workspace_role", "")),
         seniority=_coerce_seniority(raw.get("seniority")),
-        phase=str(raw.get("phase", "All")),
+        phase=_spanish_term(raw.get("phase", "All")),
         dedication_weeks=_coerce_int(raw.get("dedication_weeks"), 4, 1, 52),
-        monthly_rate_clp=_coerce_int(raw.get("monthly_rate_clp"), 5_000_000, 0),
+        monthly_rate_clp=_realistic_monthly_rate(raw),
         justification=str(raw.get("justification", "")),
     )
 
@@ -672,17 +988,17 @@ def _parse_wbs_phase(raw: Any) -> WBSPhase:
     for t in _as_list(raw.get("tasks")):
         if isinstance(t, dict):
             tasks.append(WBSTask(
-                task=str(t.get("task", "")),
-                responsible_role=str(t.get("responsible_role", "")),
+                task=_spanish_term(t.get("task", "")),
+                responsible_role=_spanish_term(t.get("responsible_role", "")),
                 effort_days=max(0.5, float(t.get("effort_days", 1.0))),
             ))
     return WBSPhase(
-        phase_name=str(raw.get("phase_name", "")),
-        ibm_method_phase=str(raw.get("ibm_method_phase", "")),
+        phase_name=_spanish_term(raw.get("phase_name", "")),
+        ibm_method_phase=_spanish_term(raw.get("ibm_method_phase", "")),
         duration_weeks=_coerce_int(raw.get("duration_weeks"), 2, 1),
-        objectives=_as_str_list(raw.get("objectives")),
+        objectives=[_spanish_term(item) for item in _as_str_list(raw.get("objectives"))],
         tasks=tasks,
-        deliverables=_as_str_list(raw.get("deliverables")),
+        deliverables=[_spanish_term(item) for item in _as_str_list(raw.get("deliverables"))],
     )
 
 
@@ -691,11 +1007,11 @@ def _parse_user_story(raw: Any, index: int) -> UserStory:
         return UserStory(id=f"US-{index + 1:03d}")
     return UserStory(
         id=str(raw.get("id", f"US-{index + 1:03d}")),
-        epic=str(raw.get("epic", "")),
-        as_a=str(raw.get("as_a", "")),
-        i_want=str(raw.get("i_want", "")),
-        so_that=str(raw.get("so_that", "")),
-        acceptance_criteria=_as_str_list(raw.get("acceptance_criteria")),
+        epic=_spanish_term(raw.get("epic", "")),
+        as_a=_spanish_term(raw.get("as_a", "")),
+        i_want=_spanish_term(raw.get("i_want", "")),
+        so_that=_spanish_term(raw.get("so_that", "")),
+        acceptance_criteria=[_spanish_term(item) for item in _as_str_list(raw.get("acceptance_criteria"))],
         priority=_coerce_priority(raw.get("priority")),
         story_points=_coerce_story_points(raw.get("story_points")),
     )
@@ -706,13 +1022,13 @@ def _parse_adr(raw: Any, index: int) -> ADR:
         return ADR(id=f"ADR-{index + 1:03d}")
     return ADR(
         id=str(raw.get("id", f"ADR-{index + 1:03d}")),
-        title=str(raw.get("title", "")),
+        title=_spanish_term(raw.get("title", "")),
         status=str(raw.get("status", "Accepted")),
-        context=str(raw.get("context", "")),
-        decision=str(raw.get("decision", "")),
-        rationale=str(raw.get("rationale", "")),
-        alternatives_considered=_as_str_list(raw.get("alternatives_considered")),
-        consequences=str(raw.get("consequences", "")),
+        context=_spanish_term(raw.get("context", "")),
+        decision=_spanish_term(raw.get("decision", "")),
+        rationale=_spanish_term(raw.get("rationale", "")),
+        alternatives_considered=[_spanish_term(item) for item in _as_str_list(raw.get("alternatives_considered"))],
+        consequences=_spanish_term(raw.get("consequences", "")),
     )
 
 
@@ -811,6 +1127,54 @@ def _fallback_method_and_team(state: ProjectPlanState) -> dict:
 
 
 def _fallback_user_stories(state: ProjectPlanState) -> list[dict]:
+    arch = state.get("selected_architecture") or {}
+    modules = _as_str_list(arch.get("functional_modules") or arch.get("modules"))
+    service_count = _coerce_int(arch.get("service_count"), 0, 0, 12)
+
+    if modules:
+        stories = [
+            {
+                "id": "US-001", "epic": "Acceso y Seguridad",
+                "as_a": "operador autorizado", "i_want": "iniciar sesión con permisos asociados a mi rol",
+                "so_that": "pueda operar las capacidades de la plataforma sin exponer información sensible",
+                "acceptance_criteria": [
+                    "Firebase valida credenciales y retorna una sesión activa antes de mostrar el workspace",
+                    "El frontend oculta capacidades no autorizadas según el rol recibido desde la API",
+                    "Los intentos fallidos muestran un mensaje claro sin revelar detalles internos del sistema",
+                ],
+                "priority": "Must Have", "story_points": 5,
+            }
+        ]
+        for idx, module in enumerate(modules[:8], start=2):
+            label = module.replace("-", " ")
+            stories.append({
+                "id": f"US-{idx:03d}", "epic": label.title(),
+                "as_a": "operador de la plataforma",
+                "i_want": f"gestionar la capacidad {label}",
+                "so_that": "pueda ejecutar el servicio comprometido con trazabilidad y control operacional",
+                "acceptance_criteria": [
+                    f"El frontend React muestra una vista navegable para {label} con estado de carga, vacío y error",
+                    f"FastAPI expone endpoints versionados para consultar y actualizar información de {label}",
+                    "Cada acción relevante queda registrada con usuario, fecha, resultado y evidencia asociada",
+                ],
+                "priority": "Must Have" if idx <= 4 else "Should Have",
+                "story_points": 5 if idx <= 4 else 3,
+            })
+        if service_count > 1:
+            stories.append({
+                "id": f"US-{len(stories) + 1:03d}", "epic": "Servicios Navegables",
+                "as_a": "administrador operativo",
+                "i_want": "navegar entre los servicios detectados desde una consola central",
+                "so_that": "pueda visualizar estado, responsables y evidencia de cada servicio sin cambiar de herramienta",
+                "acceptance_criteria": [
+                    f"El preview muestra {service_count} servicios accesibles desde la navegación principal",
+                    "Cada servicio conserva su propio estado, métricas y últimos eventos operativos",
+                    "La API retorna errores por servicio sin bloquear la navegación del resto de la plataforma",
+                ],
+                "priority": "Should Have", "story_points": 5,
+            })
+        return stories[:12]
+
     return [
         {
             "id": "US-001", "epic": "Acceso y Seguridad",
@@ -852,23 +1216,23 @@ def _fallback_adrs(arch: dict) -> list[dict]:
     adrs = []
     if arch.get("frontend") in ("react", "none") or True:
         adrs.append({
-            "id": "ADR-001", "title": "Adopt React + Vite for Frontend",
+            "id": "ADR-001", "title": "Adoptar React + Vite para el frontend",
             "status": "Accepted",
-            "context": "The project requires a modern, performant frontend framework aligned with IBM Consulting delivery standards.",
-            "decision": "Use React 18 with Vite as the build tool and React Router for SPA navigation.",
-            "rationale": "React is IBM's preferred frontend framework for digital products. Vite provides fast hot-reload and optimized builds, aligned with IBM DevSecOps CI/CD standards.",
-            "alternatives_considered": ["Angular — rejected due to higher learning curve and slower iteration", "Vue.js — rejected as IBM Consulting has less internal expertise"],
-            "consequences": "Team benefits from large ecosystem and IBM internal assets. Requires disciplined component architecture to avoid prop-drilling.",
+            "context": "El proyecto requiere una experiencia frontend moderna, performante y alineada con estándares de entrega IBM Consulting.",
+            "decision": "Usar React 18 con Vite como herramienta de build y React Router para navegación SPA.",
+            "rationale": "React entrega un ecosistema maduro para productos digitales y Vite acelera el ciclo de desarrollo con hot reload y builds optimizados.",
+            "alternatives_considered": ["Angular: descartado por mayor curva de aprendizaje para este alcance", "Vue.js: descartado por menor alineación con los activos internos disponibles"],
+            "consequences": "El equipo gana velocidad y reutilización de componentes, pero debe mantener una arquitectura disciplinada para evitar acoplamiento excesivo.",
         })
     if arch.get("backend") in ("fastapi", "none") or True:
         adrs.append({
-            "id": "ADR-002", "title": "Adopt FastAPI for Backend API",
+            "id": "ADR-002", "title": "Adoptar FastAPI para la API backend",
             "status": "Accepted",
-            "context": "The project requires a high-performance Python backend with automatic API documentation.",
-            "decision": "Use FastAPI with Uvicorn ASGI server and Pydantic for data validation.",
-            "rationale": "FastAPI's automatic OpenAPI/Swagger documentation aligns with IBM's API-first delivery standard. Pydantic enforces data contracts consistently.",
-            "alternatives_considered": ["Django REST Framework — rejected as heavier for microservices-style API", "Flask — rejected as lacks automatic data validation and OpenAPI generation"],
-            "consequences": "Faster API development with built-in docs. Requires Python 3.9+ and async-aware database drivers.",
+            "context": "El proyecto requiere un backend Python de alto rendimiento con documentación automática de API.",
+            "decision": "Usar FastAPI con servidor ASGI Uvicorn y Pydantic para validación de contratos de datos.",
+            "rationale": "La documentación OpenAPI/Swagger automática de FastAPI se alinea con una entrega API-first y reduce fricción entre frontend, backend y QA.",
+            "alternatives_considered": ["Django REST Framework: descartado por ser más pesado para una API modular", "Flask: descartado por requerir más configuración manual para contratos y OpenAPI"],
+            "consequences": "Se acelera el desarrollo de endpoints y documentación, pero el equipo debe cuidar dependencias async y configuración de despliegue.",
         })
     return adrs
 
@@ -904,6 +1268,17 @@ def _safe_extract_json_array(raw: str) -> Optional[list]:
         return None
 
 
+def _mentions_unrequested_chatbot(value: Any, description: str) -> bool:
+    desc = description.lower()
+    if any(term in desc for term in ("chatbot", "chat bot", "asistente conversacional", "bot conversacional")):
+        return False
+    try:
+        serialized = json.dumps(value, ensure_ascii=False).lower()
+    except TypeError:
+        serialized = str(value).lower()
+    return any(term in serialized for term in ("chatbot", "chat bot", "asistente conversacional", "bot conversacional"))
+
+
 # ---------------------------------------------------------------------------
 # Coercion helpers
 # ---------------------------------------------------------------------------
@@ -913,6 +1288,41 @@ def _coerce_int(value: Any, default: int, minimum: int = 0, maximum: int = 10_00
         return max(minimum, min(maximum, int(value)))
     except (TypeError, ValueError):
         return default
+
+
+def _realistic_monthly_rate(role: dict[str, Any]) -> int:
+    raw_rate = _coerce_int(role.get("monthly_rate_clp"), DEFAULT_MONTHLY_RATE_CLP, 0)
+    inferred_rate = _infer_monthly_rate(role)
+    if raw_rate < MIN_REALISTIC_MONTHLY_RATE_CLP:
+        return inferred_rate
+    return max(raw_rate, MIN_REALISTIC_MONTHLY_RATE_CLP)
+
+
+def _infer_monthly_rate(role: dict[str, Any]) -> int:
+    role_text = " ".join(
+        str(role.get(key, ""))
+        for key in ("ibm_method_workspace_role", "role_name")
+    ).strip().lower()
+    seniority = _coerce_seniority(role.get("seniority")).lower()
+
+    for label, rate in ROLE_RATE_TABLE_CLP.items():
+        if label in role_text:
+            if seniority == "mid" and rate == 5_000_000:
+                return 3_500_000
+            if seniority == "junior" and "developer" in role_text:
+                return 2_500_000
+            return rate
+
+    return DEFAULT_MONTHLY_RATE_CLP
+
+
+def _spanish_term(value: Any) -> str:
+    text = str(value or "")
+    if not text:
+        return text
+    for source, target in sorted(SPANISH_TERM_MAP.items(), key=lambda item: len(item[0]), reverse=True):
+        text = re.sub(rf"\b{re.escape(source)}\b", target, text, flags=re.IGNORECASE)
+    return text
 
 
 def _coerce_seniority(value: Any) -> str:
@@ -959,5 +1369,38 @@ def _tech_summary_from_arch(arch: dict, description: str) -> str:
             parts.append(f"Cloud: {arch['cloud'].upper()}")
         if arch.get("include_langgraph"):
             parts.append("AI: LangGraph + LLM agents")
+        if arch.get("include_services") and arch.get("service_count"):
+            parts.append(f"Servicios navegables: {arch.get('service_count')}")
         return ", ".join(parts) if parts else description[:200]
     return description[:200]
+
+
+def _planning_context_from_arch(arch: dict) -> str:
+    if not arch:
+        return "No hay arquitectura detectada; usar solo la descripcion."
+
+    parts = []
+    modules = _as_str_list(arch.get("functional_modules") or arch.get("modules"))
+    navigation = _as_str_list(arch.get("navigation_sections"))
+    roles = _as_str_list(arch.get("roles"))
+    services = _as_str_list(arch.get("microservices") or arch.get("services"))
+    integrations = _as_str_list(arch.get("integrations"))
+
+    if modules:
+        parts.append(f"capacidades={', '.join(modules[:12])}")
+    if navigation:
+        parts.append(f"navegacion={', '.join(navigation[:12])}")
+    if roles:
+        parts.append(f"roles_operativos={', '.join(roles[:10])}")
+    if arch.get("include_services") or arch.get("service_count"):
+        count = arch.get("service_count") or len(services) or "varios"
+        service_label = f"servicios_navegables={count}"
+        if services:
+            service_label += f" ({', '.join(services[:8])})"
+        parts.append(service_label)
+    if integrations:
+        parts.append(f"integraciones={', '.join(integrations[:8])}")
+    if arch.get("project_profile"):
+        parts.append(f"perfil={arch.get('project_profile')}")
+
+    return "; ".join(parts) if parts else "Arquitectura base sin capacidades explicitas."

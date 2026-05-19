@@ -1,9 +1,15 @@
 import { History, Send } from 'lucide-react';
 import { useState } from 'react';
 
-const initialMessages = [
-  { role: 'assistant', text: 'Hola. Soy el agente base del prototipo. ¿en qué puedo ayudarte?' },
-];
+{% if include_langgraph %}
+const AGENT_INTRO = 'Hola. Soy el agente de {{ project_title }}. Estoy conectado a LangGraph. ¿En qué puedo ayudarte?';
+const MOCK_RESPONSE = 'Respuesta mock. Para activar el agente real, conecta el endpoint /api/agent siguiendo docs/SETUP_GUIDE.md.';
+{% else %}
+const AGENT_INTRO = 'Hola. Soy el asistente de {{ project_title }}. ¿En qué puedo ayudarte?';
+const MOCK_RESPONSE = 'Respuesta mock. Para activar el pipeline de IA, configura el modelo en backend/app/ai/ siguiendo docs/SETUP_GUIDE.md.';
+{% endif %}
+
+const initialMessages = [{ role: 'assistant', text: AGENT_INTRO }];
 
 export function Agent() {
   const [messages, setMessages] = useState(initialMessages);
@@ -18,7 +24,7 @@ export function Agent() {
     setMessages((current) => [
       ...current,
       { role: 'user', text },
-      { role: 'assistant', text: 'Respuesta mock. Conecta Gemini 2.5 Flash y LangGraph siguiendo docs/SETUP_GUIDE.md.' },
+      { role: 'assistant', text: MOCK_RESPONSE },
     ]);
     setDraft('');
   }
@@ -28,7 +34,7 @@ export function Agent() {
       <section className="agent-chat">
         <div className="agent-header">
           <div className="agent-header-title">
-            <span className="eyebrow">IA</span>
+            <span className="eyebrow">{{ "IA · " + experience_mode }}</span>
             <h2>Agente</h2>
           </div>
           <button

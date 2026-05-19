@@ -7,14 +7,22 @@ import { Agent } from '../pages/Agent.jsx';
 import { Login } from '../pages/Login.jsx';
 import { ProtectedRoute } from './ProtectedRoute.jsx';
 {% endif %}
+{% if "dashboard" in pages %}
 import { Dashboard } from '../pages/Dashboard.jsx';
+{% endif %}
 import { ModulePage } from '../pages/ModulePage.jsx';
+{% if "not-found" in pages %}
 import { NotFound } from '../pages/NotFound.jsx';
+{% endif %}
 {% if include_services and extra_services %}
 import { ServicePage } from '../pages/ServicePage.jsx';
 {% endif %}
+{% if "settings" in pages %}
 import { Settings } from '../pages/Settings.jsx';
+{% endif %}
+{% if "workspace" in pages %}
 import { Workspace } from '../pages/Workspace.jsx';
+{% endif %}
 
 export function AppRouter() {
   const appLayout = <Layout />;
@@ -30,8 +38,12 @@ export function AppRouter() {
 {% endif %}
       <Route path="/app" element={ {% if include_login %}protectedLayout{% else %}appLayout{% endif %} }>
         <Route index element={<Navigate to="{{ primary_route }}" replace />} />
+{% if "workspace" in pages %}
         <Route path="workspace" element={<Workspace />} />
+{% endif %}
+{% if "dashboard" in pages %}
         <Route path="dashboard" element={<Dashboard />} />
+{% endif %}
         <Route path="module/:moduleSlug" element={<ModulePage />} />
 {% if include_services and extra_services %}
         <Route path="service/:serviceSlug" element={<ServicePage />} />
@@ -39,9 +51,13 @@ export function AppRouter() {
 {% if include_ai_ui %}
         <Route path="agent" element={<Agent />} />
 {% endif %}
+{% if "settings" in pages %}
         <Route path="settings" element={<Settings />} />
+{% endif %}
       </Route>
+{% if "not-found" in pages %}
       <Route path="*" element={<NotFound />} />
+{% endif %}
     </Routes>
   );
 }

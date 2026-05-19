@@ -1,11 +1,11 @@
-import { ArrowLeft, ArrowRight, BarChart3, BrainCircuit, Clipboard, Cog, Globe, LayoutDashboard, LayoutPanelTop, Loader2, MessageSquare, PackageCheck, Plug, Rows4, Search, Settings, ShieldCheck, User, Users, Workflow, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight, BarChart3, BrainCircuit, CheckCircle2, Clipboard, Cog, FileText, FileUp, Globe, LayoutDashboard, LayoutPanelTop, Loader2, MessageSquare, PackageCheck, Plug, Plus, RefreshCw, Rows4, Search, Settings, ShieldCheck, User, Users, Workflow, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ibmLogo from '../assets/brand/ibm-logo.png';
 import { ArchitecturePreview } from '../components/ArchitecturePreview.jsx';
 import { LiveProjectPreview } from '../components/LiveProjectPreview.jsx';
 import { OptionCard } from '../components/OptionCard.jsx';
 import IBMProjectPlanView from '../components/IBMProjectPlanView.jsx';
-import { generateProject, generateProjectWithAI, getOptions, planProject } from '../services/api.js';
+import { extractPdf, generateProject, generateProjectWithAI, getOptions, planProject } from '../services/api.js';
 
 const initialConfig = {
   project_name: 'mi-proyecto-base',
@@ -109,8 +109,30 @@ export function GeneratorPage() {
   const [aiPlan, setAiPlan] = useState(null);
   const [aiPlanStatus, setAiPlanStatus] = useState('idle');
   const [aiPlanError, setAiPlanError] = useState('');
+  const [pdfUploadStatus, setPdfUploadStatus] = useState('idle');
+  const [pdfFileName, setPdfFileName] = useState('');
+  const [pdfFileSize, setPdfFileSize] = useState('');
+  const [pdfExtractedText, setPdfExtractedText] = useState('');
+  const [pdfUploadProgress, setPdfUploadProgress] = useState(0);
+  const [pdfUploadError, setPdfUploadError] = useState('');
+  const [pdfMeta, setPdfMeta] = useState(null);
+  const [pdfFile, setPdfFile] = useState(null);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
   const modeBarRef = useRef(null);
   const manualScrollPendingRef = useRef(false);
+  const pdfInputRef = useRef(null);
+  const attachMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!showAttachMenu) return;
+    function handleOutside(e) {
+      if (attachMenuRef.current && !attachMenuRef.current.contains(e.target)) {
+        setShowAttachMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [showAttachMenu]);
 
   useEffect(() => {
     getOptions()
@@ -174,27 +196,104 @@ export function GeneratorPage() {
     }
   }
 
-  async function handleGenerateProjectWithAI() {
-    const message = aiMessage.trim();
-    const projectName = aiProjectName.trim();
-    if (!message) {
-      setAiError('Ingrese una descripción de requerimientos antes de continuar.');
-      return;
-    }
-    if (projectName.length < 3) {
-      setAiError('El identificador del proyecto debe tener al menos 3 caracteres.');
-      return;
-    }
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
 
+  async function processPdfFile(file) {
+    if (!file) return;
+    setShowAttachMenu(false);
+    setPdfUploadStatus('loading');
+    setPdfFileName(file.name);
+    setPdfFileSize(formatFileSize(file.size));
+    setPdfFile(file);
+    setPdfUploadProgress(0);
+    setPdfUploadError('');
+    setPdfMeta(null);
+    setPdfExtractedText('');
+    setAiError('');
+    try {
+      const response = await extractPdf(file, {
+        onUploadProgress: (progressEvent) => {
+          if (!progressEvent.total) return;
+          setPdfUploadProgress(Math.min(100, Math.round((progressEvent.loaded * 100) / progressEvent.total)));
+        },
+      });
+      const { text, ...metadata } = response;
+      setPdfExtractedText(text);
+      setPdfMeta(metadata);
+      setPdfUploadProgress(100);
+      setPdfUploadStatus('success');
+    } catch (uploadError) {
+      const message = uploadError.response?.data?.detail || 'No fue posible extraer el texto del PDF.';
+      setAiError(message);
+      setPdfUploadError(message);
+      setPdfUploadStatus('error');
+      setPdfExtractedText('');
+    }
+  }
+
+  async function handlePdfUpload(event) {
+    const file = event.target.files?.[0];
+    await processPdfFile(file);
+    event.target.value = '';
+  }
+
+  function handleRemovePdf() {
+    setPdfExtractedText('');
+    setPdfFileName('');
+    setPdfFileSize('');
+    setPdfUploadStatus('idle');
+    setPdfUploadProgress(0);
+    setPdfUploadError('');
+    setPdfMeta(null);
+    setPdfFile(null);
+  }
+
+  function getPdfStatusLabel() {
+    if (pdfUploadStatus === 'loading') {
+      return pdfUploadProgress < 100 ? `Subiendo PDF ${pdfUploadProgress}%` : 'Extrayendo texto del PDF';
+    }
+    if (pdfUploadStatus === 'success') {
+      return pdfMeta?.truncated ? 'PDF listo, se usara un extracto optimizado' : 'PDF listo para la IA';
+    }
+    if (pdfUploadStatus === 'error') return 'PDF no procesado';
+    return '';
+  }
+
+  function buildAIRequirementsMessage() {
+    const instructions = aiMessage.trim();
+    const pdfText = pdfExtractedText.trim();
+    if (pdfText && instructions) {
+      return `[Documento de requerimientos]\n${pdfText}\n\n[Instrucciones adicionales]\n${instructions}`;
+    }
+    return pdfText || instructions;
+  }
+
+  async function handleGenerateProjectWithAI() {
+    const projectName = aiProjectName.trim();
+    if (pdfUploadStatus === 'loading') {
+      setAiError('Espere a que el PDF termine de procesarse antes de analizar el proyecto.');
+      return;
+    }
+    const message = buildAIRequirementsMessage();
+    if (!message) {
+      setAiError('Ingrese una descripción o adjunte un PDF de requerimientos antes de continuar.');
+      return;
+    }
+    const resolvedProjectName = projectName === initialConfig.project_name ? undefined : projectName;
     setAiStatus('loading');
     setAiError('');
     setAiResult(null);
     setAiRefreshStatus('idle');
 
     try {
-      const response = await generateProjectWithAI({ prompt: message, project_name: projectName });
+      const response = await generateProjectWithAI({ prompt: message, project_name: resolvedProjectName });
       const nextPreviewConfig = response.project_config ? normalizeConfig(response.project_config) : null;
       setAiResult(response);
+      setAiProjectName(response.project_name);
       setAiPreviewConfig(nextPreviewConfig);
       if (response.project_config) {
         setConfig(normalizeConfig(response.project_config));
@@ -214,10 +313,11 @@ export function GeneratorPage() {
     setAiPlanError('');
     setAiPlan(null);
     try {
+      const description = buildAIRequirementsMessage() || aiResult?.message || '';
       const response = await planProject({
-        description: aiMessage.trim() || aiResult?.message || '',
-        project_name: aiProjectName.trim() || 'proyecto-ibm',
-        selected_architecture: aiResult?.selected_architecture || null,
+        description,
+        project_name: aiProjectName.trim() || undefined,
+        selected_architecture: aiPreviewConfig || aiResult?.project_config || aiResult?.selected_architecture || null,
       });
       setAiPlan(response.plan);
       setAiPlanStatus('success');
@@ -384,18 +484,119 @@ export function GeneratorPage() {
                       placeholder="mi-proyecto-base"
                     />
                   </label>
-                  <label className="field span-2 ai-input">
-                    <span>Requerimientos del proyecto</span>
-                    <textarea
-                      value={aiMessage}
-                      onChange={(event) => setAiMessage(event.target.value)}
-                      placeholder="Plataforma web para gestión de reservas. Roles: paciente, profesional, administrador. Autenticación con SSO, dashboard analítico, base de datos relacional, despliegue en contenedores sobre GCP."
+
+                  <div className="span-2 ai-composer-wrapper">
+                    <input
+                      ref={pdfInputRef}
+                      type="file"
+                      accept="application/pdf"
+                      style={{ display: 'none' }}
+                      onChange={handlePdfUpload}
                     />
-                  </label>
+
+                    {(pdfFileName || pdfUploadStatus === 'loading') && (
+                      <div className="ai-attachments-row">
+                        <div className={`ai-attachment-preview ai-attachment-preview--${pdfUploadStatus}`}>
+                          <div className="ai-attachment-thumb">
+                            {pdfUploadStatus === 'loading' ? (
+                              <Loader2 className="spin" size={16} />
+                            ) : pdfUploadStatus === 'success' ? (
+                              <CheckCircle2 size={18} />
+                            ) : pdfUploadStatus === 'error' ? (
+                              <AlertCircle size={18} />
+                            ) : (
+                              <FileText size={18} />
+                            )}
+                          </div>
+                          <div className="ai-attachment-info">
+                            <span className="ai-attachment-name">{pdfFileName}</span>
+                            <span className="ai-attachment-size">{getPdfStatusLabel()}</span>
+                            {pdfUploadStatus === 'loading' && (
+                              <span className="ai-upload-meter" aria-hidden="true">
+                                <span style={{ width: `${Math.max(8, pdfUploadProgress)}%` }} />
+                              </span>
+                            )}
+                            {pdfUploadStatus === 'success' && (
+                              <span className="ai-attachment-meta">
+                                {pdfFileSize}
+                                {pdfMeta?.page_count ? ` · ${pdfMeta.extracted_pages}/${pdfMeta.page_count} paginas` : ''}
+                              </span>
+                            )}
+                            {pdfUploadStatus === 'error' && (
+                              <span className="ai-attachment-error">{pdfUploadError}</span>
+                            )}
+                          </div>
+                          {pdfUploadStatus === 'error' && pdfFile && (
+                            <button
+                              type="button"
+                              className="ai-attachment-action"
+                              onClick={() => processPdfFile(pdfFile)}
+                              aria-label="Reintentar PDF"
+                            >
+                              <RefreshCw size={12} />
+                            </button>
+                          )}
+                          {pdfUploadStatus !== 'loading' && (
+                            <button
+                              type="button"
+                              className="ai-attachment-remove"
+                              onClick={handleRemovePdf}
+                              aria-label="Quitar PDF"
+                            >
+                              <X size={10} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="ai-composer-card">
+                      <textarea
+                        className="ai-composer-textarea"
+                        value={aiMessage}
+                        onChange={(event) => setAiMessage(event.target.value)}
+                        placeholder={pdfFileName
+                          ? 'Agrega instrucciones específicas, restricciones o preferencias para complementar el PDF…'
+                          : 'Plataforma web para gestión de reservas. Roles: paciente, profesional, administrador. Autenticación con SSO, dashboard analítico, base de datos relacional, despliegue en contenedores sobre GCP.'}
+                      />
+                      <div className="ai-composer-toolbar">
+                        <div className="ai-attach-container" ref={attachMenuRef}>
+                          <button
+                            type="button"
+                            className="ai-attach-btn"
+                            onClick={() => setShowAttachMenu((v) => !v)}
+                            aria-label="Adjuntar archivo"
+                            disabled={pdfUploadStatus === 'loading'}
+                          >
+                            <Plus size={16} />
+                          </button>
+                          {showAttachMenu && (
+                            <div className="ai-attach-popup">
+                              <button
+                                type="button"
+                                className="ai-attach-popup-row"
+                                onClick={() => pdfInputRef.current?.click()}
+                                disabled={pdfUploadStatus === 'loading' || pdfUploadStatus === 'success'}
+                              >
+                                <span className="ai-attach-popup-icon ai-attach-popup-icon--doc">
+                                  <FileUp size={16} />
+                                </span>
+                                <span className="ai-attach-popup-copy">
+                                  <strong>PDF de requerimientos</strong>
+                                  <small>Se procesa completo antes de enviarlo a la IA</small>
+                                </span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="info-row span-2">
                     La IA convertirá los requerimientos en stack técnico, roles, módulos funcionales, navegación base y estructura del MVP generado.
                   </div>
-                  <button className="generate-button span-2" disabled={aiStatus === 'loading'} type="button" onClick={handleGenerateProjectWithAI}>
+                  <button className="generate-button span-2" disabled={aiStatus === 'loading' || pdfUploadStatus === 'loading'} type="button" onClick={handleGenerateProjectWithAI}>
                     {aiStatus === 'loading' ? <Loader2 className="spin" size={18} /> : <BrainCircuit size={18} />}
                     Analizar y configurar
                   </button>
@@ -485,6 +686,14 @@ export function GeneratorPage() {
               </button>
             </div>
           </div>
+          <AISidebar
+            step={aiStep}
+            previewConfig={aiPreviewConfig}
+            plan={aiPlan}
+            planStatus={aiPlanStatus}
+            result={aiResult}
+            hasFrontend={aiHasFrontend}
+          />
         </section>
       ) : (
       <section className="manual-workspace" id="configure">
@@ -776,6 +985,7 @@ export function GeneratorPage() {
 
 function AIReviewStep({ onEditConfig, previewConfig, result }) {
   const architecture = result.selected_architecture || {};
+  const serviceLabels = getReviewServiceLabels(previewConfig);
   const rows = [
     ['Proyecto', result.project_name],
     ['Tipo', architecture.project_type],
@@ -791,7 +1001,7 @@ function AIReviewStep({ onEditConfig, previewConfig, result }) {
       <div className="panel-heading compact ai-step-heading">
         <span className="eyebrow">Review</span>
         <h2>Arquitectura propuesta por la IA</h2>
-        <p>Este review traduce los requerimientos detectados a una base real de proyecto. Los módulos, roles y la navegación inferior alimentan tanto el preview como el MVP final.</p>
+        <p>Este review traduce los requerimientos detectados a una base real de proyecto. Las capacidades y roles detectados alimentan tanto el preview como el MVP final.</p>
       </div>
 
       <div className="ai-result-grid ai-review-grid">
@@ -803,9 +1013,11 @@ function AIReviewStep({ onEditConfig, previewConfig, result }) {
         ))}
       </div>
 
-      <ResultTagSection title="Módulos que se incorporarán al MVP" items={previewConfig.functional_modules} emptyLabel="No se detectaron módulos específicos." />
+      <ResultTagSection title="Capacidades que se incorporarán al MVP" items={previewConfig.functional_modules} emptyLabel="No se detectaron capacidades específicas." />
       <ResultTagSection title="Roles que se incorporarán al MVP" items={previewConfig.user_roles} emptyLabel="No se detectaron roles específicos." />
-      <ResultTagSection title="Apartados de navegación derivados" items={previewConfig.navigation_sections} emptyLabel="La base usará solo workspace, administración y settings." />
+      {serviceLabels.length > 0 && (
+        <ResultTagSection title="Servicios navegables" items={serviceLabels} emptyLabel="No se detectaron servicios adicionales." />
+      )}
       <ResultTagSection title="Plantillas aplicadas" items={result.selected_templates} emptyLabel="No definido" />
 
       <div className="ai-actions-row">
@@ -816,6 +1028,19 @@ function AIReviewStep({ onEditConfig, previewConfig, result }) {
       </div>
     </div>
   );
+}
+
+function getReviewServiceLabels(config) {
+  if (!config?.include_services || !config.service_count || config.project_type === 'web') {
+    return [];
+  }
+
+  const modules = Array.from(new Set((config.functional_modules || []).filter(Boolean)));
+  return Array.from({ length: config.service_count }, (_, index) => {
+    if (config.project_profile === 'ai' && index === 0) return 'agent-service';
+    const module = modules[index];
+    return module ? `${module}-service` : `service-${index + 1}`;
+  });
 }
 
 function AIDeliveryStep({ aiRefreshStatus, onRefreshPackage, onUpdatePreviewConfig, options, previewConfig, result }) {
@@ -1101,6 +1326,188 @@ function ResultTagSection({ emptyLabel, items = [], title }) {
       )}
     </div>
   );
+}
+
+function AISidebar({ step, previewConfig, plan, planStatus, result, hasFrontend }) {
+  if (step === 1 && previewConfig) {
+    return <ArchitecturePreview config={previewConfig} />;
+  }
+
+  if (step === 1) {
+    return (
+      <aside className="ai-context-sidebar">
+        <div className="sidebar-section">
+          <p className="sidebar-eyebrow">Review</p>
+          <p className="sidebar-title">Arquitectura detectada</p>
+          <p className="sidebar-body">
+            Una vez que la IA analice tu descripción, aquí verás el diagrama de la
+            arquitectura seleccionada con stack, módulos y roles.
+          </p>
+        </div>
+        <div className="sidebar-section">
+          <p className="sidebar-eyebrow">Qué revisar</p>
+          <div className="ai-sidebar-capability">
+            <span className="cap-icon"><LayoutPanelTop size={14} /></span>
+            <div className="cap-text">
+              <strong>Plantilla seleccionada</strong>
+              <span>Verifica que la arquitectura elegida se ajusta al proyecto.</span>
+            </div>
+          </div>
+          <div className="ai-sidebar-capability">
+            <span className="cap-icon"><Settings size={14} /></span>
+            <div className="cap-text">
+              <strong>Configuración detectada</strong>
+              <span>Revisa stack, base de datos, autenticación y proveedor cloud.</span>
+            </div>
+          </div>
+          <div className="ai-sidebar-capability">
+            <span className="cap-icon"><User size={14} /></span>
+            <div className="cap-text">
+              <strong>Roles y módulos</strong>
+              <span>Confirma que los módulos y perfiles de usuario son correctos.</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
+  if (step === 0) {
+    return (
+      <aside className="ai-context-sidebar">
+        <div className="sidebar-section">
+          <p className="sidebar-eyebrow">Asistencia IA</p>
+          <p className="sidebar-title">¿Cómo funciona?</p>
+          <p className="sidebar-body">
+            Describe tu proyecto en lenguaje natural y la IA configurará toda la arquitectura,
+            roles, módulos y navegación automáticamente.
+          </p>
+        </div>
+        <div className="sidebar-section">
+          <p className="sidebar-eyebrow">Capacidades</p>
+          <div className="ai-sidebar-capability">
+            <span className="cap-icon"><Search size={14} /></span>
+            <div className="cap-text">
+              <strong>Análisis semántico</strong>
+              <span>Detecta stack, roles y módulos desde texto libre.</span>
+            </div>
+          </div>
+          <div className="ai-sidebar-capability">
+            <span className="cap-icon"><BarChart3 size={14} /></span>
+            <div className="cap-text">
+              <strong>Selección de arquitectura</strong>
+              <span>Elige la plantilla IBM que mejor encaja con el proyecto.</span>
+            </div>
+          </div>
+          <div className="ai-sidebar-capability">
+            <span className="cap-icon"><Users size={14} /></span>
+            <div className="cap-text">
+              <strong>Equipo y plan IBM</strong>
+              <span>Genera roles, WBS, historias de usuario y ADRs con metodología IBM.</span>
+            </div>
+          </div>
+          <div className="ai-sidebar-capability">
+            <span className="cap-icon"><Workflow size={14} /></span>
+            <div className="cap-text">
+              <strong>MVP generado</strong>
+              <span>Produce un paquete instalable con un comando, listo para el equipo.</span>
+            </div>
+          </div>
+        </div>
+        <div className="sidebar-section">
+          <p className="sidebar-eyebrow">Sugerencia</p>
+          <p className="sidebar-body">
+            Incluye roles de usuario, tipo de autenticación, módulos clave y proveedor cloud
+            para obtener una arquitectura más precisa.
+          </p>
+        </div>
+      </aside>
+    );
+  }
+
+  if (step === 2) {
+    const sections = [
+      { icon: <Clipboard size={14} />, label: 'WBS', desc: 'Estructura de desglose de trabajo por fase IBM.' },
+      { icon: <Users size={14} />, label: 'Equipo', desc: 'Roles, dedicación y costo estimado en CLP.' },
+      { icon: <ShieldCheck size={14} />, label: 'ADRs', desc: 'Decisiones arquitectónicas con alternativas y justificación.' },
+      { icon: <MessageSquare size={14} />, label: 'Historias', desc: 'User stories con criterios de aceptación por sprint.' },
+      { icon: <BarChart3 size={14} />, label: 'Costos cloud', desc: 'Estimados GCP / AWS / Azure por servicio (CLP).' },
+    ];
+    return (
+      <aside className="ai-context-sidebar">
+        <div className="sidebar-section">
+          <p className="sidebar-eyebrow">Plan IBM</p>
+          <p className="sidebar-title">Metodología IBM Garage</p>
+          <p className="sidebar-body">
+            El plan sigue el ciclo IBM: Discovery → Alpha → Beta → General Availability,
+            con entregables y criterios de salida por fase.
+          </p>
+        </div>
+        <div className="sidebar-section">
+          <p className="sidebar-eyebrow">Incluye</p>
+          {sections.map(({ icon, label, desc }) => (
+            <div key={label} className="ai-sidebar-capability">
+              <span className="cap-icon">{icon}</span>
+              <div className="cap-text">
+                <strong>{label}</strong>
+                <span>{desc}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        {planStatus === 'success' && plan && (
+          <div className="sidebar-section">
+            <p className="sidebar-eyebrow">Descarga</p>
+            <p className="sidebar-body">
+              Usa el botón "Descargar PDF" dentro del plan para guardar una copia offline.
+            </p>
+          </div>
+        )}
+      </aside>
+    );
+  }
+
+  const deliveryStep = hasFrontend ? 4 : 3;
+  if (step === deliveryStep) {
+    return (
+      <aside className="ai-context-sidebar">
+        <div className="sidebar-section">
+          <p className="sidebar-eyebrow">Entrega</p>
+          <p className="sidebar-title">Paquete listo</p>
+          <p className="sidebar-body">
+            El ZIP contiene toda la arquitectura configurada. Ejecuta el comando de instalación
+            y el proyecto quedará disponible de inmediato.
+          </p>
+        </div>
+        <div className="sidebar-section">
+          <p className="sidebar-eyebrow">Pasos siguientes</p>
+          <div className="ai-sidebar-capability">
+            <span className="cap-icon"><PackageCheck size={14} /></span>
+            <div className="cap-text">
+              <strong>Descarga el ZIP</strong>
+              <span>Contiene frontend, backend, Docker y scripts de arranque.</span>
+            </div>
+          </div>
+          <div className="ai-sidebar-capability">
+            <span className="cap-icon"><Cog size={14} /></span>
+            <div className="cap-text">
+              <strong>Ejecuta el instalador</strong>
+              <span>Copia el comando <code>curl</code> o PowerShell y pégalo en tu terminal.</span>
+            </div>
+          </div>
+          <div className="ai-sidebar-capability">
+            <span className="cap-icon"><Plug size={14} /></span>
+            <div className="cap-text">
+              <strong>Ajusta variables</strong>
+              <span>Edita el <code>.env</code> generado con tus credenciales reales.</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
+  return previewConfig ? <ArchitecturePreview config={previewConfig} /> : null;
 }
 
 function SelectGroup({ label, options = [], value, onSelect }) {

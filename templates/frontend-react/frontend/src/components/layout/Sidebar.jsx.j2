@@ -22,15 +22,19 @@ export function Sidebar() {
           </div>
         </div>
         <nav>
+{% if "workspace" in pages %}
           <NavLink to="/app/workspace">
             <PanelLeft size={16} />
             Workspace
           </NavLink>
+{% endif %}
 
+{% if "dashboard" in pages %}
           <NavLink to="/app/dashboard">
             <BarChart3 size={16} />
             {{ "Panel admin" if experience_mode == "admin" else "Administración" }}
           </NavLink>
+{% endif %}
 
           {navigationSections.length > 0 && (
             <div className="nav-section">
@@ -76,12 +80,14 @@ export function Sidebar() {
           </div>
 {% endif %}
 
+{% if "settings" in pages %}
           <div className="nav-section">
             <NavLink to="/app/settings">
               <Settings size={16} />
               Configuración
             </NavLink>
           </div>
+{% endif %}
         </nav>
       </div>
 
