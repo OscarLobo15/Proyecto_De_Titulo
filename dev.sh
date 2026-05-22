@@ -34,6 +34,74 @@ print_line() {
   printf "%b\n" "$1"
 }
 
+browser_tab_is_open() {
+  local url="$1"
+  local browser
+  local result
+
+  command -v osascript >/dev/null 2>&1 || return 1
+  command -v pgrep >/dev/null 2>&1 || return 1
+
+  for browser in "Google Chrome" "Microsoft Edge" "Safari"; do
+    pgrep -x "$browser" >/dev/null 2>&1 || continue
+
+    result="$(osascript - "$browser" "$url" <<'APPLESCRIPT' 2>/dev/null || true
+on run argv
+  set browserName to item 1 of argv
+  set targetUrl to item 2 of argv
+
+  if browserName is "Safari" then
+    tell application "Safari"
+      repeat with browserWindow in windows
+        repeat with browserTab in tabs of browserWindow
+          if (URL of browserTab) starts with targetUrl then return true
+        end repeat
+      end repeat
+    end tell
+  else if browserName is "Microsoft Edge" then
+    tell application "Microsoft Edge"
+      repeat with browserWindow in windows
+        repeat with browserTab in tabs of browserWindow
+          if (URL of browserTab) starts with targetUrl then return true
+        end repeat
+      end repeat
+    end tell
+  else
+    tell application "Google Chrome"
+      repeat with browserWindow in windows
+        repeat with browserTab in tabs of browserWindow
+          if (URL of browserTab) starts with targetUrl then return true
+        end repeat
+      end repeat
+    end tell
+  end if
+
+  return false
+end run
+APPLESCRIPT
+)"
+
+    [ "$result" = "true" ] && return 0
+  done
+
+  return 1
+}
+
+open_frontend_once() {
+  local url="http://localhost:${FRONTEND_PORT}"
+
+  if [ "$OPEN_BROWSER" != "true" ] || ! command -v open >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if browser_tab_is_open "$url"; then
+    print_line "${DIM}Browser already has ${url} open.${NC}"
+    return 0
+  fi
+
+  open "$url" >/dev/null 2>&1 || true
+}
+
 banner() {
   print_line "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
   print_line "${BLUE}║  Reference Architecture Generator - Dev Environment   ║${NC}"
@@ -83,9 +151,7 @@ foreground() {
   print_line "${GREEN}Frontend:${NC} http://localhost:${FRONTEND_PORT}"
   print_line "${GREEN}Swagger:${NC}  http://${BACKEND_HOST}:${BACKEND_PORT}/docs"
 
-  if [ "$OPEN_BROWSER" = "true" ] && command -v open >/dev/null 2>&1; then
-    open "http://localhost:${FRONTEND_PORT}" >/dev/null 2>&1 || true
-  fi
+  open_frontend_once
 
   cleanup_foreground() {
     print_line "${DIM}Stopping backend...${NC}"
@@ -336,9 +402,7 @@ start_frontend() {
     fi
     print_line "${GREEN}Frontend ready.${NC} http://localhost:${FRONTEND_PORT}"
     print_line "${DIM}Alternative: http://127.0.0.1:${FRONTEND_PORT}${NC}"
-    if [ "$OPEN_BROWSER" = "true" ] && command -v open >/dev/null 2>&1; then
-      open "http://localhost:${FRONTEND_PORT}" >/dev/null 2>&1 || true
-    fi
+    open_frontend_once
   else
     print_line "${RED}Frontend did not become healthy. Last log lines:${NC}"
     tail -40 "$FRONTEND_LOG" || true
